@@ -108,3 +108,10 @@ if __name__ == '__main__':
         call_locations = find_calls(spectrum, sr)
         save_spec(spectrum, file='../data/output_spectrograms/test_spec_{}.png'.format(i))
 
+def get_spectrum(start_time, spectrum, audio, segment_length=10):
+    processed_audio = audio[:, 0].astype('f')/1000 # take first channel, scale values down by 1000.
+    MAX_T = (len(processed_audio)/spectrum)/60
+    start_idx = min(int(spectrum * start_time * 60), (MAX_T*60 - segment_length - 1)*spectrum)
+    end_idx = int(spectrum * (start_time * 60 + segment_length))
+    f, t, spectrum = stft(processed_audio[start_idx:end_idx], nperseg=spectrum//10, fs=spectrum)
+    return start_time + t/60, f, np.log(np.abs(spectrum) + 1e-10)
