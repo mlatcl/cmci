@@ -3,7 +3,7 @@ import numpy as np
 import plotly.express as px
 from scipy.signal import stft
 from scipy.io import wavfile as wav
-from utils import CallFinder
+from callfinder import CallFinder
 from audio.audio_processing import get_spectrum
 
 from dash import Dash, dcc, html
