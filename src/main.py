@@ -15,7 +15,8 @@ from os.path import isfile, join
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.YETI])
 
-CALL_FINDER = CallFinder()
+CONDITIONS = [(lambda x: ((x > 4e3) & (x < 7e3)), False)]
+CALL_FINDER = CallFinder(conditions=CONDITIONS)
 
 def define_slidemarks(sampling_rate, audio_len):
     max_time = int(audio_len/sampling_rate)
@@ -59,7 +60,7 @@ app.layout = html.Div(children=[
 )
 def update_initial_exposed(start_time, audio_file_name):
     start_time /= 60
-    segment_length = 10 # seconds
+    segment_length = 10 # seconds, width of the spectrum we find_calls over and
 
     if audio_file_name is None:
         audio_file_name = '../data/10MinSample.wav'
@@ -82,3 +83,10 @@ def update_initial_exposed(start_time, audio_file_name):
 
 if __name__ == '__main__':
     app.run_server(debug=True, host='0.0.0.0')
+
+## Notes
+"""
+Notes:
+
+Have a way to change parameters like threshold quantile and measure how many calls we find / (how many we (miss?))
+"""
