@@ -27,7 +27,7 @@ class CallFinder:
     def normalize_spectrum(S):
         s_min, s_max = S.min(), S.max()
         S = (S - s_min) / (s_max - s_min)
-        S = S > 0.8 # maybe change this to quantile
+        S = S > 0.85 # maybe change this to quantile
         return S
 
     @staticmethod

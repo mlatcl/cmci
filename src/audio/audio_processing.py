@@ -1,3 +1,4 @@
+
 from sys import call_tracing
 import numpy as np
 from scipy.io import wavfile as wav
@@ -46,36 +47,6 @@ def find_calls_old(spectrum, sr):
 
     return call_locations
 
-def find_calls(S, f, hmm):
-    s_min, s_max = S.min(), S.max()
-    S = (S - s_min) / (s_max - s_min) # normalize
-    S = S > 0.8 # maybe change this to quantile
-    S[(f < 4e3) | (f > 7000), :] = 0.0
-
-    hmm.fit(S.sum(axis=0).reshape(-1, 1))
-    labels = []
-    try:
-        labels = hmm.predict(S.sum(axis=0).reshape(-1, 1))
-        labels = np.diff(labels, prepend=0)
-
-        starts = np.where(labels == 1)[0]
-        ends = np.where(labels == -1)[0]
-
-        if (len(starts) != len(ends)):
-            if labels[np.where(labels != 0)[0][0]] == 1:
-                # call identified at the end and doesn't finish
-                ends = np.hstack([ends, len(labels) - 1])
-            else:
-                starts = np.hstack([0, starts])
-
-        if (len(starts) != len(ends)) or (ends < starts).any():
-            from IPython.core.debugger import set_trace; set_trace()
-            print('find_calls has failed.')
-        labels = np.vstack((starts, ends)).T
-    except:
-        from IPython.core.debugger import set_trace; set_trace()
-    return labels
-
 def save_spec(spectrum, file='spec.png'):
     plt.clf()
     plt.imshow(spectrum)
@@ -108,10 +79,10 @@ if __name__ == '__main__':
         call_locations = find_calls(spectrum, sr)
         save_spec(spectrum, file='../data/output_spectrograms/test_spec_{}.png'.format(i))
 
-def get_spectrum(start_time, spectrum, audio, segment_length=10):
+def get_spectrum(start_time, sampling_rate, audio, segment_length=10):
     processed_audio = audio[:, 0].astype('f')/1000 # take first channel, scale values down by 1000.
-    MAX_T = (len(processed_audio)/spectrum)/60
-    start_idx = min(int(spectrum * start_time * 60), (MAX_T*60 - segment_length - 1)*spectrum)
-    end_idx = int(spectrum * (start_time * 60 + segment_length))
-    f, t, spectrum = stft(processed_audio[start_idx:end_idx], nperseg=spectrum//10, fs=spectrum)
+    max_time = (len(processed_audio)/sampling_rate)/60
+    start_idx = min(int(sampling_rate * start_time * 60), (max_time*60 - segment_length - 1)*sampling_rate)
+    end_idx = int(sampling_rate * (start_time * 60 + segment_length))
+    f, t, spectrum = stft(processed_audio[start_idx:end_idx], nperseg=sampling_rate//10, fs=sampling_rate)
     return start_time + t/60, f, np.log(np.abs(spectrum) + 1e-10)
