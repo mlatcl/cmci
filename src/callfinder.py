@@ -1,4 +1,3 @@
-
 import numpy as np
 from hmmlearn.hmm import GaussianHMM
 
@@ -10,8 +9,9 @@ class CallFinder:
         # states are (no call, call)
         self.hmm = GaussianHMM(n_components=self.n_states, params="st", init_params="st")
         self.conditions = [
-            (lambda x: ((x > 4.5e3) & (x < 6.5e3)), False, 1.),
-            (lambda x: ((x > 7e3) & (x < 10e3)), True, 1.),
+            (lambda x: ((x > 1.5e3) & (x < 7.2e3)), False), # trill and chuck
+            # (lambda x: ((x > 7.5e3) & (x < 10e3)), True), #CANOOR + HONK
+            # (lambda x: ((x > 0.5e3) & (x < 1.7e3)), False), # HONK
             ] if conditions is None else conditions
         self.hmm.n_features = 1
 
@@ -30,7 +30,7 @@ class CallFinder:
         self.hmm.means_[state, i] = 0.0
 
         covars_ = self.hmm.covars_.copy()
-        covars_[state, i, i] = 9 # sqrt of this * 2 controls roughly how many theshold hits will trigger a "call" signal.
+        covars_[state, i, i] = 1e-2 # sqrt of this * 2 controls roughly how many theshold hits will trigger a "call" signal.
         self.hmm.covars_ = covars_[:, range(self.hmm.n_features), range(self.hmm.n_features)]
 
     @staticmethod
@@ -100,7 +100,7 @@ class CallFinder:
         else:
             return np.zeros((0,2))
 
-    def find_calls(self, S, f, t):
+    def find_calls(self, S, f, t, threshold=10):
         nS = self.normalize_spectrum(S)
         tnS = self.threshold_spectrum(nS, quantile=0.99)
         wnS = self.whale_threshold_spectrum(nS, c1=3, c2=2.4)
@@ -108,14 +108,14 @@ class CallFinder:
 
         # threshold
         features = self.compute_features(thresholded_spectrum, f)
-        final_feature = np.zeros((features.shape[0], 1))
+        final_feature = np.zeros((features.shape[0], 1)).astype(bool)
         for i, (c, f) in enumerate(zip(self.conditions, list(features.T))):
-            if c[1] is True: # column negative
-                tf = f * -1 * c[2]
-            else:
-                tf = f * c[2]
-            final_feature = final_feature + tf[:, None]            
-        
+            is_call = not c[1]
+            feat_i = (f > threshold) if is_call else (f <= threshold)
+            # from pdb import set_trace; set_trace()
+            final_feature[:, 0] |= feat_i
+        final_feature = final_feature.astype(float)
+        print(final_feature)
         self.fit_hmm(final_feature)
         labels = self.hmm.predict(final_feature)
 

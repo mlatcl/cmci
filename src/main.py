@@ -83,14 +83,14 @@ def update_initial_exposed(start_time, audio_file_name):
     options = get_audio_files()
 
     spectrum_fig = px.imshow(S, aspect='auto', x=t, y=f, origin='lower',
-        labels=dict(x='Time (min)', y='Freq (Hz)'))
+        labels=dict(x='Time (sec)', y='Freq (Hz)'))
 
     segments, thresholded_spectrum, features, final_feature = CALL_FINDER.find_calls(S, f, t)
 
     thresholded_spectrum_fig = px.imshow(thresholded_spectrum, aspect='auto', x=t, y=f, origin='lower',
-        labels=dict(x='Time (min)', y='Freq (Hz)'))
+        labels=dict(x='Time (sec)', y='Freq (Hz)'))
     
-    features_fig = px.line(x=t, y=features[:,0], range_y=(-1000, 1000))
+    features_fig = px.line(x=t, y=features[:,0])
     # features_fig = px.line(x=t, y=final_feature[:,0], range_y=(-100, 100))
     for i in range(0,features.shape[1]):
         features_fig.add_scatter(x=t, y=features[:,i], mode='lines', name=f'Feature {i}')
@@ -101,7 +101,7 @@ def update_initial_exposed(start_time, audio_file_name):
 
     for segment in segments:
         x0, x1 = segment
-        if start_time < x0 and start_time + segment_length/60 > x1:
+        if start_time < x0 and start_time + segment_length > x1:
             spectrum_fig.add_shape(x0=x0, x1=x1, y0=f[0], y1=f[-1], opacity=0.25, fillcolor="Green")
             thresholded_spectrum_fig.add_shape(x0=x0, x1=x1, y0=f[0], y1=f[-1], opacity=0.25, fillcolor="Green")
 
