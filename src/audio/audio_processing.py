@@ -7,10 +7,6 @@ import matplotlib.pyplot as plt
 from librosa.feature import melspectrogram
 plt.style.use('seaborn-pastel'); plt.ion()
 
-def select_audio_snippet(audio, sr, start_time_secs, end_time_secs):
-    batched_audio = audio[int(start_time_secs*sr):int(end_time_secs*sr)] # trill
-    return batched_audio
-
 def split_audio(audio, sr, num_windows=None, window_length_secs=None):
     """
     Takes in a big numpy array and splits it!
@@ -59,8 +55,6 @@ if __name__ == '__main__':
     sr, audio = wav.read(DATA_PATH)
 
     audio = audio[:, 0].astype('f') # mean across L, R channels
-    start_time_secs = 33.5
-    end_time_secs = 34.23
     # batched_audio = audio[int(3.89*sr):int(4.46*sr)] # phi
 
     # nfft is window length. / 10 => 10 windows will be made
@@ -80,9 +74,13 @@ if __name__ == '__main__':
         save_spec(spectrum, file='../data/output_spectrograms/test_spec_{}.png'.format(i))
 
 def get_spectrum(start_time, sampling_rate, audio, segment_length=10):
+    """
+    Start time is in seconds.
+    Segement length is in seconds.
+    """
     processed_audio = audio[:, 0].astype('f')/1000 # take first channel, scale values down by 1000.
-    max_time = (len(processed_audio)/sampling_rate)/60
-    start_idx = min(int(sampling_rate * start_time * 60), (max_time*60 - segment_length - 1)*sampling_rate)
-    end_idx = int(sampling_rate * (start_time * 60 + segment_length))
+    max_time = (len(processed_audio)/sampling_rate)
+    start_idx = min(int(sampling_rate * start_time), (max_time - segment_length - 1)*sampling_rate)
+    end_idx = int(sampling_rate * (start_time + segment_length))
     f, t, spectrum = stft(processed_audio[start_idx:end_idx], nperseg=sampling_rate//10, fs=sampling_rate)
-    return start_time + t/60, f, np.log(np.abs(spectrum) + 1e-10)
+    return start_time + t, f, np.log(np.abs(spectrum) + 1e-10)

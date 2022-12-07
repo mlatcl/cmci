@@ -76,10 +76,17 @@ if __name__ == '__main__':
                 # TODO add a loop to process over all the start times / windows / length of the file?
                 print("\tProcessing file {}".format(file))
                 sampling_rate, audio = wav.read(dir_name + file)
-                t, f, S = get_spectrum(start_time=start_time, sampling_rate=sampling_rate, audio=audio, segment_length=segment_length)
-                segments, thresholded_spectrum, features, final_feature = callFinder.find_calls(S, f, t)
-                full_name = "s3://" + bucket + dir_name + file if is_s3 else dir_name + file
-                files_and_segments[full_name] = {'segments': segments.tolist()}
+                length_secs_audio = (audio.shape[0] // sampling_rate)
+                print("\tAUDIO {} {}".format(audio.shape, length_secs_audio))
+                for curr_time in range(0, length_secs_audio-segment_length, segment_length):
+                    print("\t\tCurrent time {}".format(curr_time))
+                    t, f, S = get_spectrum(start_time=curr_time, sampling_rate=sampling_rate, audio=audio, segment_length=segment_length)
+                    segments, thresholded_spectrum, features, final_feature = callFinder.find_calls(S, f, t)
+                    full_name = "s3://" + bucket + dir_name + file if is_s3 else dir_name + file
+                    if full_name in files_and_segments:
+                        files_and_segments[full_name] = {'segments': files_and_segments[full_name]['segments'] + segments.tolist()}
+                    else:
+                        files_and_segments[full_name] = {'segments': segments.tolist()}
         print()
 
     save_segments(files_and_segments)

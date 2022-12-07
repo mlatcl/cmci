@@ -67,7 +67,9 @@ app.layout = html.Div(children=[
     ]
 )
 def update_initial_exposed(start_time, audio_file_name):
-    start_time /= 60
+    """
+    Start time is in seconds.
+    """
     print("Start time: {}".format(start_time))
     segment_length = 10 # seconds, width of the spectrum we find_calls over and
 
@@ -93,7 +95,6 @@ def update_initial_exposed(start_time, audio_file_name):
     for i in range(0,features.shape[1]):
         features_fig.add_scatter(x=t, y=features[:,i], mode='lines', name=f'Feature {i}')
 
-    print("Final Feature Outside: {}".format(final_feature))
     features_fig.add_scatter(x=t, y=final_feature[:,0], mode='lines', name='Final Feature')
     
 

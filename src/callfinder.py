@@ -9,11 +9,8 @@ class CallFinder:
     def __init__(self, conditions=None):
         # states are (no call, call)
         self.hmm = GaussianHMM(n_components=self.n_states, params="st", init_params="st")
-        # self.conditions = [(condition, call_is_zeroes), ...]
         self.conditions = [
             (lambda x: ((x > 4.5e3) & (x < 6.5e3)), False, 1.),
-            # (lambda x: ((x > 10e3) & (x < 12e3)), False),
-            # (lambda x: ((x < 4e3)), True, 1.),
             (lambda x: ((x > 7e3) & (x < 10e3)), True, 1.),
             ] if conditions is None else conditions
         self.hmm.n_features = 1
@@ -41,17 +38,14 @@ class CallFinder:
         freq_to_ignore = 40
         if quantile is not None:
             threshold = np.quantile(S, quantile)
-        print("Quantile {} Threshold {}".format(quantile, threshold))
         S = S > threshold # maybe change this to quantile
         S[:freq_to_ignore, :] = 0
         return S
 
     @staticmethod
     def whale_threshold_spectrum(S, c1=3, c2=2.5):
-        # from pdb import set_trace; set_trace();
         t1 = c1*np.tile(np.median(S, axis=1)[:, None], (1, S.shape[1]))
         t2 = c1*np.tile(np.median(S, axis=0)[None, :], (S.shape[0], 1))
-        print("T1: {} T2: {}".format(t1.shape, t2.shape))
         threshold = np.maximum(t1, t2) / c2
         return S > threshold
 
@@ -98,20 +92,20 @@ class CallFinder:
 
     @staticmethod
     def clean_labels(t, start_end_indices):
-        print("SEI: {}".format(start_end_indices))
-        extended_sei = np.array([list((max(s-2, 0), e)) for (s, e) in start_end_indices])
-        range_timepoints = t[extended_sei]
-        range_timepoints[np.diff(range_timepoints, axis=1)[:, 0] > 0.2/60, :] # small windows are ignored
-        print(range_timepoints)
-        return range_timepoints
+        if len(start_end_indices) > 0:
+            extended_sei = np.array([list((max(s-2, 0), e)) for (s, e) in start_end_indices])
+            range_timepoints = t[extended_sei]
+            range_timepoints[np.diff(range_timepoints, axis=1)[:, 0] > 0.2/60, :] # small windows are ignored
+            return range_timepoints
+        else:
+            return np.zeros((0,2))
 
     def find_calls(self, S, f, t):
         nS = self.normalize_spectrum(S)
         tnS = self.threshold_spectrum(nS, quantile=0.99)
         wnS = self.whale_threshold_spectrum(nS, c1=3, c2=2.4)
         thresholded_spectrum = tnS
-        print("Whale theshold {}".format(wnS))
-        print("Normie theshold {}".format(tnS))
+
         # threshold
         features = self.compute_features(thresholded_spectrum, f)
         final_feature = np.zeros((features.shape[0], 1))
@@ -120,16 +114,8 @@ class CallFinder:
                 tf = f * -1 * c[2]
             else:
                 tf = f * c[2]
-            print("TF {}".format(tf))
-            final_feature = final_feature + tf[:, None]
-            
-            print("Final Feature {}".format(final_feature))
-            
-            
-        print("Features: {}".format(features))
-        print("Final Feature: {}".format(final_feature))
-        print("Final Feature diff: {}".format(final_feature-features[:,[0]]))
-
+            final_feature = final_feature + tf[:, None]            
+        
         self.fit_hmm(final_feature)
         labels = self.hmm.predict(final_feature)
 
