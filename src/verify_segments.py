@@ -11,31 +11,41 @@ import matplotlib.pyplot as plt
 
 import os
 
-if __name__ == '__main__':
+def get_segments():
     with open("segments.json", 'r') as fp:
         segments = json.load(fp)
     segment_list = []
     for f, segments in segments.items():
         sl = [(seg[0], seg[1], f) for seg in segments['segments']]
         segment_list.extend(sl)
+    return segment_list
+
+def get_spectrum_segment(start, end, filename, extension=1.5):
+        sampling_rate, audio = wav.read(filename)
+        start = float(start)
+        end = float(end)
+
+        if start > extension:
+            start_extend = start - extension
+        if end < (len(audio) // sampling_rate) - extension:
+            end_extend = end + extension
+        return get_spectrum(
+            start_time=start_extend,
+            sampling_rate=sampling_rate,
+            audio=audio,
+            segment_length=end_extend-start_extend
+        )
+
+if __name__ == '__main__':
+    segment_list = get_segments()
+
     print(len(segment_list))
     idx_samples = np.random.choice(range(len(segment_list)), 30)
     sampled_segments = np.array(segment_list)[idx_samples, :]
     print(sampled_segments)
 
     for (start, end, f) in sampled_segments:
-        sampling_rate, audio = wav.read(f)
-        start = float(start)
-        end = float(end)
-        extension = 1.5
-
-
-        if start > extension:
-            start_extend = start - extension
-        if end < (len(audio) // sampling_rate) - extension:
-            end_extend = end + extension
-        t, freq, S = get_spectrum(start_time=start_extend, sampling_rate=sampling_rate, audio=audio, segment_length=end_extend-start_extend)
-        
+        t, freq, S = get_spectrum_segment(start, end, f)
 
         spectrum_fig = px.imshow(S, aspect='auto', x=t, y=freq, origin='lower',
             labels=dict(x='Time (sec)', y='Freq (Hz)'))
