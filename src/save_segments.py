@@ -45,7 +45,6 @@ def save_segments(files_and_segments, file_name='segments.json', is_DDB=False):
 if __name__ == '__main__':
 
     start_time = 0
-    segment_length = 10 # seconds, width of the spectrum we find_calls over and
     callFinder = CallFinder()
 
     parser = argparse.ArgumentParser(
@@ -75,14 +74,15 @@ if __name__ == '__main__':
             if file.endswith(".wav"):
                 # TODO add a loop to process over all the start times / windows / length of the file?
                 print("\tProcessing file {}".format(file))
-                sampling_rate, audio = wav.read(dir_name + file)
+                sampling_rate, audio = wav.read(os.path.join(dir_name, file))
                 length_secs_audio = (audio.shape[0] // sampling_rate)
-                print("\tAUDIO {} {}".format(audio.shape, length_secs_audio))
+                segment_length = 10 if length_secs_audio > 60 else length_secs_audio - 1 # seconds, width of the spectrum we find_calls over
+                # print("\tAUDIO {} {}".format(audio.shape, length_secs_audio))
                 for curr_time in range(0, length_secs_audio-segment_length, segment_length):
-                    print("\t\tCurrent time {}".format(curr_time))
+                    # print("\t\tCurrent time {}".format(curr_time))
                     t, f, S = get_spectrum(start_time=curr_time, sampling_rate=sampling_rate, audio=audio, segment_length=segment_length)
                     segments, thresholded_spectrum, features, final_feature = callFinder.find_calls(S, f, t)
-                    full_name = "s3://" + bucket + dir_name + file if is_s3 else dir_name + file
+                    full_name = "s3://" + bucket + os.path.join(dir_name, file) if is_s3 else os.path.join(dir_name, file)
                     if full_name in files_and_segments:
                         files_and_segments[full_name] = {'segments': files_and_segments[full_name]['segments'] + segments.tolist()}
                     else:

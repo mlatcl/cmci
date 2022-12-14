@@ -1,6 +1,10 @@
 import numpy as np
 from hmmlearn.hmm import GaussianHMM
 
+import logging
+
+logging.basicConfig(level=logging.ERROR)
+
 class CallFinder:
     NOT_CALL_STATE, CALL_STATE = 0, 1
     n_states = 2
@@ -115,7 +119,7 @@ class CallFinder:
             # from pdb import set_trace; set_trace()
             final_feature[:, 0] |= feat_i
         final_feature = final_feature.astype(float)
-        print(final_feature)
+        # print(final_feature)
         self.fit_hmm(final_feature)
         labels = self.hmm.predict(final_feature)
 

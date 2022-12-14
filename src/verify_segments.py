@@ -25,10 +25,14 @@ def get_spectrum_segment(start, end, filename, extension=1.5):
         start = float(start)
         end = float(end)
 
-        if start > extension:
+        if start >= extension:
             start_extend = start - extension
-        if end < (len(audio) // sampling_rate) - extension:
+        else:
+            start_extend = start
+        if end <= (len(audio) // sampling_rate) - extension:
             end_extend = end + extension
+        else:
+            end_extend = end
         return get_spectrum(
             start_time=start_extend,
             sampling_rate=sampling_rate,
