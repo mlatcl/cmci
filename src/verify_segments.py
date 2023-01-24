@@ -8,6 +8,7 @@ from audio.audio_processing import get_spectrum
 import argparse
 import json
 import matplotlib.pyplot as plt
+from functools import lru_cache
 
 import os
 
@@ -20,8 +21,12 @@ def get_segments():
         segment_list.extend(sl)
     return segment_list
 
+@lru_cache(maxsize=20)
+def load_audio_file(filename):
+    return wav.read(filename)
+
 def get_spectrum_segment(start, end, filename, extension=1.5):
-        sampling_rate, audio = wav.read(filename)
+        sampling_rate, audio = load_audio_file(filename)
         start = float(start)
         end = float(end)
 
