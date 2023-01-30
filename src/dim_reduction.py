@@ -66,37 +66,45 @@ if __name__ == '__main__':
     ###########################################################
     # Data prep
 
-    segment_list = get_segments()
+    # segment_list = get_segments()
 
-    n_mels, new_segm_len = 32, 16
-    specs = []
-    labels = []
-    for (start, end, f) in tqdm(segment_list):
-        t, freq, S = get_spectrum_segment(start, end, f, extension=0.01)
+    # n_mels, new_segm_len = 32, 16
+    # specs = []
+    # labels = []
+    # for (start, end, f) in tqdm(segment_list):
+    #     t, freq, S = get_spectrum_segment(start, end, f, extension=0.01)
 
-        mel_spec = melspectrogram(S=S, n_mels=n_mels)
-        mel_spec = Resize((n_mels, new_segm_len))(torch.tensor(mel_spec)[None, ...])
+    #     mel_spec = melspectrogram(S=S, n_mels=n_mels)
+    #     mel_spec = Resize((n_mels, new_segm_len))(torch.tensor(mel_spec)[None, ...])
 
-        if mel_spec.shape == (1, n_mels, new_segm_len):
-            specs.append(mel_spec)
-            if '_samples' in f:
-                labels.append(f.replace('../data/', '').replace('_samples.wav', ''))
-            else:
-                labels.append('')
+    #     if mel_spec.shape == (1, n_mels, new_segm_len):
+    #         specs.append(mel_spec)
+    #         if '_samples' in f:
+    #             labels.append(f.replace('../data/', '').replace('_samples.wav', ''))
+    #         else:
+    #             labels.append('')
 
-    def standardize(x): return x/5 + 1
+    # def standardize(x): return x/5 + 1
 
-    X = standardize(torch.cat(specs, axis=0)[:, None, :, :])
-    labels = np.hstack(labels)
+    # X = standardize(torch.cat(specs, axis=0)[:, None, :, :]).cuda()
+    # labels = np.hstack(labels)
+
+    # torch.save(X.cpu(), 'X.pth')
+    # torch.save(labels, 'labels.pth')
+
+    X = torch.load('X.pth')
+    labels = torch.load('labels.pth')
 
     ###########################################################
     # Optim
 
-    dim_reducer = VAE() # .cuda()
-    parameter_prior = torch.distributions.Normal(0, 0.05)
+    dim_reducer = VAE()
+    dim_reducer.load_state_dict(torch.load('sd.pth'))
+    dim_reducer = dim_reducer.cuda()
+    parameter_prior = torch.distributions.Normal(0, 0.1)
 
     optimizer = torch.optim.Adam([
-        {'lr': 0.005, 'params': dim_reducer.parameters()},
+        {'lr': 0.01, 'params': dim_reducer.parameters()},
     ])
 
     losses = []; bar = trange(10000, leave=False)
@@ -115,14 +123,40 @@ if __name__ == '__main__':
 
         bar.set_description(f'n_elbo:{np.round(loss.item(), 2)}')
 
+    # torch.save(Z.cpu().detach(), 'Z.pth')
+    # torch.save(dim_reducer.cpu().state_dict(), 'sd.pth')
+
     ###########################################################
     # Plotting
+
+    Z = torch.load('Z.pth')
 
     plt.ion(); plt.style.use('seaborn-pastel')
 
     reduced_dim = Z.detach().cpu().numpy()
-    unique_labels = np.unique(labels)
-    cols = ['blue', 'red', 'green', 'cyan', 'pink', 'black']
-    for lb, c in zip(unique_labels, cols):
-        plt.scatter(reduced_dim[labels == lb, 0], reduced_dim[labels == lb, 1], c=c, label=lb)
-    plt.legend()
+    # unique_labels = np.unique(labels)
+    # cols = ['blue', 'red', 'green', 'cyan', 'pink', 'black']
+    # for lb, c in zip(unique_labels, cols):
+    #     plt.scatter(reduced_dim[labels == lb, 0], reduced_dim[labels == lb, 1], c=c, label=lb, alpha=0.01)
+    # plt.legend()
+
+    from matplotlib import offsetbox
+
+    plt.figure()
+    ax = plt.subplot(aspect='equal')
+
+    plt.ylim(-5, 5)
+    plt.xlim(-5, 5)
+    plt.tight_layout()
+
+    ax.scatter(reduced_dim[:, 0], reduced_dim[:, 1], lw=0, s=40, alpha=0.01)
+
+    shown_images = reduced_dim[[0], :]
+    for i in range(len(reduced_dim)):
+        if np.square(reduced_dim[i] - shown_images).sum(axis=1).min() < 0.75:
+            continue
+        plt.scatter(reduced_dim[i, 0], reduced_dim[i, 1], c='black', alpha=0.7)
+        ax.add_artist(offsetbox.AnnotationBbox(
+            offsetbox.OffsetImage(X[i, 0], cmap=plt.cm.autumn), reduced_dim[i, :]))
+        shown_images = np.r_[shown_images, reduced_dim[[i], :]]
+    plt.xticks([]), plt.yticks([])
