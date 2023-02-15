@@ -96,8 +96,6 @@ def update_initial_exposed(start_time, audio_file_name):
         features_fig.add_scatter(x=t, y=features[:,i], mode='lines', name=f'Feature {i}')
 
     features_fig.add_scatter(x=t, y=final_feature[:,0], mode='lines', name='Final Feature')
-    
-
 
     for segment in segments:
         x0, x1 = segment

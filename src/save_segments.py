@@ -34,10 +34,10 @@ def download_s3_folder(bucket, s3_folder, local_dir=None):
             continue
         bucket.download_file(obj.key, target)
     
-def save_segments(files_and_segments, file_name='segments.json', is_DDB=False):
+def save_segments(files_and_segments, file_name='segments.json', dir='', is_DDB=False):
     # TODO add DDB saving
     if not is_DDB:
-        with open(file_name, 'w') as fp:
+        with open(dir + file_name, 'w') as fp:
             json.dump(files_and_segments, fp)
     else:
         print("Please implement DDB saving!")
@@ -55,6 +55,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     input_dir = args.input
     output_dir = args.output
+
+
     is_s3 = False
     if input_dir.startswith("s3://"):
         is_s3 = True
@@ -72,7 +74,6 @@ if __name__ == '__main__':
         print("Walking directory {}".format(dir_name))
         for file in files:
             if file.endswith(".wav"):
-                # TODO add a loop to process over all the start times / windows / length of the file?
                 print("\tProcessing file {}".format(file))
                 sampling_rate, audio = wav.read(os.path.join(dir_name, file))
                 length_secs_audio = (audio.shape[0] // sampling_rate)

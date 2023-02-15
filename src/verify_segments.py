@@ -1,3 +1,9 @@
+"""
+This file samples 30 calls and generates images with the calls highlighted, 
+for use in manual verification of how well the call identifier is doing.
+
+"""
+
 
 import numpy as np
 import plotly.express as px
