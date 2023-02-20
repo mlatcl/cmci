@@ -38,8 +38,7 @@ class CallFinder:
         self.hmm.covars_ = covars_[:, range(self.hmm.n_features), range(self.hmm.n_features)]
 
     @staticmethod
-    def threshold_spectrum(S, threshold=0.85, quantile=None):
-        freq_to_ignore = 40
+    def threshold_spectrum(S, threshold=0.85, quantile=None, freq_to_ignore=0):
         if quantile is not None:
             threshold = np.quantile(S, quantile)
         S = S > threshold # maybe change this to quantile

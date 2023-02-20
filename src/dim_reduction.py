@@ -127,6 +127,14 @@ if __name__ == '__main__':
     y = torch.load('y.pth').cuda()
     n_data = len(y)
 
+    from callfinder import CallFinder
+    def binarize(x):
+        x = x[0].cpu().numpy()
+        x = CallFinder.threshold_spectrum(CallFinder.normalize_spectrum(x), 0.85, freq_to_ignore=5)
+        return torch.tensor(x)[None, None, ...].cuda().float()
+
+    X = torch.cat([binarize(x) for x in tqdm(X)], axis=0)
+
     ###########################################################
     # Optim
 
@@ -180,7 +188,7 @@ if __name__ == '__main__':
     plt.scatter(Z[np.isnan(y.cpu()) == 1, 0], Z[np.isnan(y.cpu()) == 1, 1], alpha=0.01)
     plt.scatter(Z[np.isnan(y.cpu()) == 0, 0], Z[np.isnan(y.cpu()) == 0, 1], alpha=0.25)
 
-    fig, (axa, axb) = plt.subplots(1, 2)
+    fig, (axa, axb, axc) = plt.subplots(1, 3)
     axa.scatter(Z[:, 0], Z[:, 1], alpha=0.01)
 
     record = []
@@ -194,11 +202,15 @@ if __name__ == '__main__':
 
         mel_spec = melspectrogram(S=S, n_mels=n_mels)
         mel_spec = standardize(Resize((n_mels, new_segm_len))(torch.tensor(mel_spec)[None, ...]))
-        latent, _ = dim_reducer(mel_spec[None, ...].cuda())
+        mel_spec = binarize(mel_spec).cuda()
+
+        latent, _ = dim_reducer(mel_spec)
         latent = latent.loc.cpu().detach()
 
         axb.clear()
         axb.imshow(S, aspect='auto', origin='lower', cmap=plt.cm.binary)
+
+        axc.imshow(mel_spec[0, 0].cpu(), aspect='auto', origin='lower')
         plt.draw()
 
         rect_start = int(0.35*S.shape[1] / ((end - start) + 2*0.35))
@@ -228,7 +240,7 @@ if __name__ == '__main__':
     # idx_to_plot = np.random.choice(np.arange(n_data), 20, replace=False)
     shown_images = Z[[0], :]
     for i in range(len(Z)):
-        if np.square(Z[i] - shown_images).sum(axis=1).min() < 3:
+        if np.square(Z[i] - shown_images).sum(axis=1).min() < 2:
         # if i not in idx_to_plot:
             continue
         plt.scatter(Z[i, 0], Z[i, 1], c='black', alpha=0.7)
