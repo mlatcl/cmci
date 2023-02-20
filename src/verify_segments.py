@@ -8,48 +8,12 @@ for use in manual verification of how well the call identifier is doing.
 import numpy as np
 import plotly.express as px
 from scipy.signal import stft
-from scipy.io import wavfile as wav
-from callfinder import CallFinder
-from audio.audio_processing import get_spectrum
-import argparse
-import json
+from scipy.io import wavfile as wavfile
+
 import matplotlib.pyplot as plt
-from functools import lru_cache
+from utils import get_segments, get_spectrum_segment
 
 import os
-
-def get_segments():
-    with open("segments.json", 'r') as fp:
-        segments = json.load(fp)
-    segment_list = []
-    for f, segments in segments.items():
-        sl = [(seg[0], seg[1], f) for seg in segments['segments']]
-        segment_list.extend(sl)
-    return segment_list
-
-@lru_cache(maxsize=20)
-def load_audio_file(filename):
-    return wav.read(filename)
-
-def get_spectrum_segment(start, end, filename, extension=1.5):
-        sampling_rate, audio = load_audio_file(filename)
-        start = float(start)
-        end = float(end)
-
-        if start >= extension:
-            start_extend = start - extension
-        else:
-            start_extend = start
-        if end <= (len(audio) // sampling_rate) - extension:
-            end_extend = end + extension
-        else:
-            end_extend = end
-        return get_spectrum(
-            start_time=start_extend,
-            sampling_rate=sampling_rate,
-            audio=audio,
-            segment_length=end_extend-start_extend
-        )
 
 if __name__ == '__main__':
     segment_list = get_segments()

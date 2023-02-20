@@ -103,11 +103,9 @@ class CallFinder:
         else:
             return np.zeros((0,2))
 
-    def find_calls(self, S, f, t, threshold=10):
+    def find_calls(self, S, f, t, threshold=10, mininum_call_duration=0.004, threshold_quantile=0.99):
         nS = self.normalize_spectrum(S)
-        tnS = self.threshold_spectrum(nS, quantile=0.99)
-        wnS = self.whale_threshold_spectrum(nS, c1=3, c2=2.4)
-        thresholded_spectrum = tnS
+        thresholded_spectrum = self.threshold_spectrum(nS, quantile=threshold_quantile)
 
         # threshold
         features = self.compute_features(thresholded_spectrum, f)
@@ -115,15 +113,14 @@ class CallFinder:
         for i, (c, f) in enumerate(zip(self.conditions, list(features.T))):
             is_call = not c[1]
             feat_i = (f > threshold) if is_call else (f <= threshold)
-            # from pdb import set_trace; set_trace()
             final_feature[:, 0] |= feat_i
+            
         final_feature = final_feature.astype(float)
-        # print(final_feature)
         self.fit_hmm(final_feature)
         labels = self.hmm.predict(final_feature)
 
         start_end_indices = self.get_starts_and_ends(labels)
         segments = self.clean_labels(t, start_end_indices)
-        mininum_call_duration = 0.004
+        
         segments = segments[np.diff(segments, axis=1)[:, 0] > mininum_call_duration, :] # filter out short duration calls
         return segments, thresholded_spectrum, features, final_feature

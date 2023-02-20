@@ -2,4 +2,7 @@ librosa
 numpy
 scipy
 matplotlib
-
+tqdm
+torch
+torchvision
+librosa

@@ -3,70 +3,19 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 import torch
 import torch.nn as nn
 from torchvision.transforms import Resize
 
-from verify_segments import get_segments, get_spectrum_segment
+from utils import get_segments, get_spectrum_segment
 from librosa.feature import melspectrogram
+
+from vae import VAE
 
 ###############################################################
 # VAE definition
-
-Softplus = torch.nn.Softplus()
-
-class Flatten(nn.Module):
-    def forward(self, input):
-        return input.view(input.size(0), -1)
-
-class UnFlatten(nn.Module):
-    def __init__(self, channel_size):
-        super().__init__()
-        self.channel_size = channel_size
-
-    def forward(self, input):
-        return input.view(input.size(0), self.channel_size, 2, 1)
-
-class VAE(nn.Module):
-    """ Based on sksq96/pytorch-vae """
-    def __init__(self, latent_dim=2):
-        super(VAE, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=2, stride=2),
-            nn.Softplus(),
-            nn.Conv2d(16, 16, kernel_size=2, stride=2),
-            nn.Softplus(),
-            nn.Conv2d(16, 32, kernel_size=4, stride=4),
-            nn.Softplus(),
-            nn.Conv2d(32, 32, kernel_size=2, stride=2),
-            nn.Softplus(),
-            Flatten()
-        )
-
-        self.mu = nn.Linear(self.encoder[-3].out_channels * 2, latent_dim)
-        self.log_sd = nn.Linear(self.encoder[-3].out_channels * 2, latent_dim)
-        self.log_obs_sd = torch.nn.Parameter(torch.ones(1))
-        
-        self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, self.encoder[-3].out_channels * 2),
-            UnFlatten(channel_size=self.encoder[-3].out_channels),
-            nn.ConvTranspose2d(32, 32, kernel_size=2, stride=2),
-            nn.Softplus(),
-            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=4),
-            nn.Softplus(),
-            nn.ConvTranspose2d(16, 16, kernel_size=2, stride=2),
-            nn.Softplus(),
-            nn.ConvTranspose2d(16, 1, kernel_size=2, stride=2),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x):
-        h = self.encoder(x)
-        z_mu, z_log_sd = self.mu(h), self.log_sd(h)
-        z_dist = torch.distributions.Normal(z_mu, Softplus(z_log_sd))
-        z = z_dist.rsample()
-        return z_dist, self.decoder(z)
 
 if __name__ == '__main__':
 
@@ -75,7 +24,7 @@ if __name__ == '__main__':
 
     # torch.manual_seed(42); np.random.seed(42)
 
-    segment_list = get_segments()
+    segment_list = get_segments(file='segments.json')
 
     # segments = pd.DataFrame(segment_list)
     # segments.columns = ['start', 'end', 'file']
@@ -155,7 +104,7 @@ if __name__ == '__main__':
 
         idx = np.random.choice(np.arange(n_data), batch_size)
         Zd, X_pred = dim_reducer(X[idx])
-        obs_sd = Softplus(dim_reducer.log_obs_sd)
+        obs_sd = torch.nn.Softplus(dim_reducer.log_obs_sd)
 
         elbo = torch.distributions.Normal(X_pred, obs_sd).log_prob(X[idx]).sum() - \
                torch.distributions.kl_divergence(Zd, latent_prior).sum()
@@ -177,13 +126,14 @@ if __name__ == '__main__':
     # torch.save(Z, 'Z.pth')
     # torch.save(dim_reducer.cpu().state_dict(), 'sd.pth')
 
+
+
     ###########################################################
     # Plotting
 
     Z = torch.load('Z.pth').numpy()
 
     plt.ion(); plt.style.use('seaborn-pastel')
-    import matplotlib.patches as patches
 
     plt.scatter(Z[np.isnan(y.cpu()) == 1, 0], Z[np.isnan(y.cpu()) == 1, 1], alpha=0.01)
     plt.scatter(Z[np.isnan(y.cpu()) == 0, 0], Z[np.isnan(y.cpu()) == 0, 1], alpha=0.25)
