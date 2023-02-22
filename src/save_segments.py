@@ -34,13 +34,10 @@ def download_s3_folder(bucket, s3_folder, local_dir=None):
             continue
         bucket.download_file(obj.key, target)
     
-def save_segments(files_and_segments, file_name='segments.json', dir='', is_DDB=False):
-    # TODO add DDB saving
-    if not is_DDB:
-        with open(dir + file_name, 'w') as fp:
-            json.dump(files_and_segments, fp)
-    else:
-        print("Please implement DDB saving!")
+def save_segments(files_and_segments, output_filepath='segments.json'):
+    print("Saving segments to {}".format(output_filepath))
+    with open(output_filepath, 'w') as fp:
+        json.dump(files_and_segments, fp)
 
 if __name__ == '__main__':
 
@@ -52,10 +49,10 @@ if __name__ == '__main__':
                     prog = 'CallSegmenter',
                     description = 'CLI tool for taking in data folders of wav files and segmenting /saving them!')
     parser.add_argument('input', help='The root directory with wav files and folders of them beneath it.')           # positional argument
-    parser.add_argument('--output', help='The output directory to write the json file with files and call segment locations.')           # positional argument
+    parser.add_argument('--output', help='The output directory and filename to write the json file with files and call segment locations.')           # positional argument
     args = parser.parse_args()
     input_dir = args.input
-    output_dir = args.output
+    output_filepath = args.output
     print("Time elapsed at {}: {}s".format("Beginning", time.time() - start))
 
 
@@ -76,9 +73,9 @@ if __name__ == '__main__':
     for (dir_name, directories, files) in walked_files:
         print("Walking directory {}".format(dir_name))
         for i, file in enumerate(files):
-            # print("Time elapsed at start of file {}: {:.2f}s".format(i, time.time() - start))
             if file.endswith(".wav"):
                 sampling_rate, audio = wav.read(os.path.join(dir_name, file))
+                print("Time elapsed at start of file {}: {:.2f}s".format(i, time.time() - start))
                 audio = audio[:, 0].astype('f')/1000 # take first channel, scale values down by 1000.
                 length_secs_audio = (audio.shape[0] // sampling_rate)
                 segment_length = 10 if length_secs_audio > 60 else length_secs_audio - 1 # seconds, width of the spectrum we find_calls over
@@ -100,7 +97,7 @@ if __name__ == '__main__':
                         files_and_segments[full_name] = {'segments': segments.tolist()}
                     # print()
 
-    save_segments(files_and_segments)
-    print("Time elapsed at {}: {:.2f}s".format("after saving final", time.time() - start))
+    save_segments(files_and_segments, output_filepath=output_filepath)
+    print("Time elapsed at {}: {:.2f}s".format("after saving final file", time.time() - start))
     
     pass

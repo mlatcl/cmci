@@ -3,8 +3,8 @@ import numpy as np
 import plotly.express as px
 from scipy.signal import stft
 from scipy.io import wavfile as wav
-from callfinder import CallFinder
-from audio.audio_processing import get_spectrum
+from .callfinder import CallFinder
+from .audio.audio_processing import get_spectrum
 
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output
@@ -77,7 +77,7 @@ def update_initial_exposed(start_time, audio_file_name):
         audio_file_name = '../data/10MinSample.wav'
 
     sampling_rate, audio = wav.read(audio_file_name)
-    t, f, S = get_spectrum(start_time=start_time, sampling_rate=sampling_rate, audio=audio, segment_length=segment_length)
+    S, f, t = get_spectrum(start_time=start_time, sampling_rate=sampling_rate, audio=audio, segment_length=segment_length)
 
     slidemarks, t_max = define_slidemarks(sampling_rate, len(audio))
     options = get_audio_files()

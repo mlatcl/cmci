@@ -9,87 +9,135 @@ import torch
 import torch.nn as nn
 from torchvision.transforms import Resize
 
-from utils import get_segments, get_spectrum_segment
+from utils import load_segments
+from audio.audio_processing import get_spectrum_segment
 from librosa.feature import melspectrogram
+import time
+import os
+
+from audio.call_features import CallFeatures
+from audio.audio_processing import preprocess_spectrum
 
 from vae import VAE
 
 ###############################################################
 # VAE definition
 
+Softplus = torch.nn.Softplus()
+
 if __name__ == '__main__':
 
     ###########################################################
     # Data prep
 
-    # torch.manual_seed(42); np.random.seed(42)
+    torch.manual_seed(42); np.random.seed(42)
+    # device="cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
+    MAX_CALL_DURATION = 0.5
 
-    segment_list = get_segments(file='segments.json')
+    segment_list = load_segments(file_path='../../monkey_data/segments/June13th_segments.json')
+    segment_list = [x for x in segment_list if x[1] - x[0] < MAX_CALL_DURATION]
 
-    # segments = pd.DataFrame(segment_list)
-    # segments.columns = ['start', 'end', 'file']
-    # segments['file_full'] = segments['file'].copy()
-    # segments['file'] = segments.file.str.replace(r'../data/banham/June ..../', '').str.replace('.wav', '')
-    # calls = pd.read_csv('../data/calls.csv')
+    segments = pd.DataFrame(segment_list)
+    segments.columns = ['start', 'end', 'file']
+    #"../../monkey_data/Banham/June13th/081014-013.wav"
+    # TODO
+    segments['id'] = segments.file.str.replace(r'../monkey_data/Banham/June..../', '').str.replace('.wav', '')
 
-    # def finder(i):
-    #     file, time = calls.loc[i, 'File'], calls.loc[i, 'Time ']
-    #     subset = segments.loc[segments.file == file].copy()
-    #     subset['dif'] = (subset.start - time).abs()
-    #     if len(subset) == 0: return np.nan
-    #     subset = subset.loc[subset.dif.abs() < 0.1, :]
-    #     if len(subset) == 0: return np.nan
-    #     return subset.reset_index().set_index('dif').sort_index().iloc[0]['index']
+    segments
 
-    # calls['idx'] = [finder(i) for i in range(len(calls))]
-    # calls = calls.loc[~calls.idx.isna()]
+    def finder(i, calls, segments):
+        file, time = calls.loc[i, 'File'], calls.loc[i, 'Time ']
+        subset = segments.loc[segments.file == file].copy()
+        subset['dif'] = (subset.start - time).abs()
+        if len(subset) == 0: return np.nan
+        subset = subset.loc[subset.dif.abs() < 0.1, :]
+        if len(subset) == 0: return np.nan
+        return subset.reset_index().set_index('dif').sort_index().iloc[0]['index']
 
-    # idxs_that_are_calls = calls.idx.unique()
+    calls = pd.read_csv('../../monkey_data/labelled_calls/calls.csv')
 
-    # segments.loc[idxs_that_are_calls, 'is_call'] = True
-    # segments = segments.loc[np.random.choice(len(segments), len(segments), replace=False)].reset_index(drop=True)
-    # segments = pd.concat([segments.loc[~segments.is_call.isna()], segments.loc[segments.is_call.isna()]]).reset_index(drop=True)
+    # Call Matching
+    calls['idx'] = [finder(i, calls, segments) for i in range(len(calls))]
+    calls = calls.loc[~calls.idx.isna()]
+    idxs_that_are_calls = calls.idx.unique()
+    segments.loc[idxs_that_are_calls, 'is_call'] = True
 
-    n_data, n_mels, new_segm_len = 10000, 64, 32
-    # specs = []
-    # for i in trange(n_data):
-    #     start, end, f = segments.loc[i, ['start', 'end', 'file_full']]
-    #     t, freq, S = get_spectrum_segment(start, end, f, extension=0.1)
+    # Data shuffling and sampling
+    segments = segments.loc[np.random.choice(len(segments), len(segments), replace=False)].reset_index(drop=True) # shuffle the data
+    segments = pd.concat([segments.loc[~segments.is_call.isna()], segments.loc[segments.is_call.isna()]]).reset_index(drop=True) # bring the labelled data to the front so that it is always selected
 
-    #     mel_spec = melspectrogram(S=S, n_mels=n_mels)
-    #     mel_spec = Resize((n_mels, new_segm_len))(torch.tensor(mel_spec)[None, ...])
+    # n_data number of sampled calls
+    # n_mels mel frequency buckets
+    # new_segm_len is the forced size of input to VAE.  
+    n_data, n_mels, new_segm_len = 10000, 64, 32 
 
-    #     if mel_spec.shape == (1, n_mels, new_segm_len):
-    #         specs.append(mel_spec)
-    #     else:
-    #         specs.append(torch.ones(1, n_mels, new_segm_len) * np.nan)
+    # only 1 right now
+    n_channels = 1
 
-    def standardize(x): return x/5 + 1
+    def preprocess_segments():
+        # Make inputs that go into the VAE, (X, y)
+        specs = [] # list of mel spectrograms, shape = (n_data, n_mels, new_segm_len)
+        features = []
 
-    # X = standardize(torch.cat(specs, axis=0)[:, None, :, :]).cuda()
-    # y = torch.tensor(segments.loc[:(n_data - 1), 'is_call'])
 
-    # torch.save(X.cpu(), 'X.pth')
-    # torch.save(y, 'y.pth')
 
-    X = torch.load('X.pth').cuda()
-    y = torch.load('y.pth').cuda()
+        # TODO this is slow.
+        thebest_time = time.time()
+        # print("Time at {} is {:.2f}".format("start", time.time() - thebest_time))
+
+        for i in trange(n_data):
+            start, end, f = segments.loc[i, ['start', 'end', 'file']]
+            # from IPython.core.debugger import set_trace; set_trace()
+            S, freq, t = get_spectrum_segment(start, end, f, extension=0.1)
+            # print("Computing length of t indexes", t, t.shape, np.diff(t))
+
+            mel_spec = preprocess_spectrum(S, n_mels, new_segm_len)
+
+
+            if mel_spec.shape == (n_channels, n_mels, new_segm_len):
+                specs.append(mel_spec)
+            else:
+                specs.append(torch.ones(1, n_channels, n_mels, new_segm_len) * np.nan)
+
+            S, freq, t = get_spectrum_segment(start, end, f, extension=0.001)
+            
+            cf = CallFeatures(S, freq, t)
+            feature_tuple = np.hstack((cf.maximal_power_frequencies(), cf.max_freq(), cf.duration(), cf.maximal_power(),))
+            features.append(torch.tensor(feature_tuple)[None, ...])
+
+        # def standardize(x): return x/5 + 1 # this roughly works for mel-spectrograms? 
+
+        X = torch.cat(specs, axis=0).cpu().float()
+        X_features = torch.cat(features, axis=0).cpu().float()
+        # X = standardize((X)) # Uncomment this if we're using the raw or mel spectrograms
+        y = torch.tensor(segments.loc[:(n_data - 1), 'is_call'])
+
+        return X, X_features, y
+
+
+
+
+    # Load data
+    if os.path.exists('X.pth') and os.path.exists('y.pth') and os.path.exists('X_features.pth'):
+        X = torch.load('X.pth').to(device)
+        X_features = torch.load('X_features.pth').to(device)
+        y = torch.load('y.pth').to(device)
+    else:
+        X, X_features, y = preprocess_segments()
+        torch.save(X, 'X.pth')
+        torch.save(X_features, 'X_features.pth')
+        torch.save(y, 'y.pth')
     n_data = len(y)
 
-    from callfinder import CallFinder
-    def binarize(x):
-        x = x[0].cpu().numpy()
-        x = CallFinder.threshold_spectrum(CallFinder.normalize_spectrum(x), 0.85, freq_to_ignore=5)
-        return torch.tensor(x)[None, None, ...].cuda().float()
-
-    X = torch.cat([binarize(x) for x in tqdm(X)], axis=0)
+    print(X_features)
 
     ###########################################################
     # Optim
 
     dim_reducer = VAE()
     # dim_reducer.load_state_dict(torch.load('sd.pth'))
-    dim_reducer = dim_reducer.cuda()
+    dim_reducer = dim_reducer.to(device)
     parameter_prior = torch.distributions.Normal(0, 0.1)
     latent_prior = torch.distributions.Normal(0, 1)
 
@@ -98,19 +146,18 @@ if __name__ == '__main__':
     ])
 
     batch_size = 1000
-    losses = []; bar = trange(10000, leave=False)
+    n_iters = 1000
+    losses = []; bar = trange(n_iters, leave=False)
     for i in bar:
         optimizer.zero_grad()
 
         idx = np.random.choice(np.arange(n_data), batch_size)
+
         Zd, X_pred = dim_reducer(X[idx])
-        obs_sd = torch.nn.Softplus(dim_reducer.log_obs_sd)
+        obs_sd = Softplus(dim_reducer.log_obs_sd)
 
         elbo = torch.distributions.Normal(X_pred, obs_sd).log_prob(X[idx]).sum() - \
                torch.distributions.kl_divergence(Zd, latent_prior).sum()
-
-        # for p in dim_reducer.parameters():
-        #     elbo += parameter_prior.log_prob(p).sum()
 
         loss = -elbo/n_data
 
@@ -123,78 +170,7 @@ if __name__ == '__main__':
     Zd, _ = dim_reducer(X)
     Z = Zd.loc.detach().cpu()
 
-    # torch.save(Z, 'Z.pth')
-    # torch.save(dim_reducer.cpu().state_dict(), 'sd.pth')
+    torch.save(Z, 'Z.pth')
+    torch.save(dim_reducer.cpu().state_dict(), 'sd.pth')
 
-
-
-    ###########################################################
-    # Plotting
-
-    Z = torch.load('Z.pth').numpy()
-
-    plt.ion(); plt.style.use('seaborn-pastel')
-
-    plt.scatter(Z[np.isnan(y.cpu()) == 1, 0], Z[np.isnan(y.cpu()) == 1, 1], alpha=0.01)
-    plt.scatter(Z[np.isnan(y.cpu()) == 0, 0], Z[np.isnan(y.cpu()) == 0, 1], alpha=0.25)
-
-    fig, (axa, axb, axc) = plt.subplots(1, 3)
-    axa.scatter(Z[:, 0], Z[:, 1], alpha=0.01)
-
-    record = []
-    while True:
-        idx = np.random.choice(len(segment_list), 1)[0]
-
-        start, end, f = segment_list[idx]
-        print(f'-----------------\n')
-        print(f'loading data: {segment_list[idx]}')
-        t, freq, S = get_spectrum_segment(start, end, f, extension=0.35)
-
-        mel_spec = melspectrogram(S=S, n_mels=n_mels)
-        mel_spec = standardize(Resize((n_mels, new_segm_len))(torch.tensor(mel_spec)[None, ...]))
-        mel_spec = binarize(mel_spec).cuda()
-
-        latent, _ = dim_reducer(mel_spec)
-        latent = latent.loc.cpu().detach()
-
-        axb.clear()
-        axb.imshow(S, aspect='auto', origin='lower', cmap=plt.cm.binary)
-
-        axc.imshow(mel_spec[0, 0].cpu(), aspect='auto', origin='lower')
-        plt.draw()
-
-        rect_start = int(0.35*S.shape[1] / ((end - start) + 2*0.35))
-        rect_end = S.shape[1] - rect_start
-        axb.add_patch(patches.Rectangle((rect_start, 0), rect_end - rect_start, len(freq), alpha=0.25))
-
-        label = input("Is this a call? y/n/m/.:\n")
-        col = dict(y='green', n='red', m='pink')[label]
-        axa.scatter(latent[0, 0], latent[0, 1], c=col)
-
-        record.append((
-            segment_list[idx],
-            label,
-        ))
-
-    from matplotlib import offsetbox
-
-    plt.figure()
-    ax = plt.subplot(aspect='equal')
-
-    plt.ylim(-5, 5)
-    plt.xlim(-5, 5)
-    plt.tight_layout()
-
-    ax.scatter(Z[:, 0], Z[:, 1], lw=0, s=40, alpha=0.01)
-
-    # idx_to_plot = np.random.choice(np.arange(n_data), 20, replace=False)
-    shown_images = Z[[0], :]
-    for i in range(len(Z)):
-        if np.square(Z[i] - shown_images).sum(axis=1).min() < 2:
-        # if i not in idx_to_plot:
-            continue
-        plt.scatter(Z[i, 0], Z[i, 1], c='black', alpha=0.7)
-        ax.add_artist(offsetbox.AnnotationBbox(
-            offsetbox.OffsetImage(X.cpu().numpy()[i, 0], cmap=plt.cm.autumn), Z[i, :]))
-        shown_images = np.r_[shown_images, Z[[i], :]]
-    plt.xticks([]), plt.yticks([])
+    dim_reducer.to(device)
