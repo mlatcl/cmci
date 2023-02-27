@@ -6,3 +6,5 @@ tmp/*
 *.json
 *.pth
 *ipynb_checkpoints*
+*.npy
+*.xlsx
