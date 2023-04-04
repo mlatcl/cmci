@@ -23,9 +23,21 @@ def process(f, start, end):
     a = read_audio(f + '.wav')[int(start * sr):int(end * sr)]
     # S = spectrogram(a, nperseg=len(a)//3, noverlap=len(a)//12, fs=sr)[-1]
     S = np.abs(stft(a, n_fft=len(a)//3, hop_length=len(a)//6))
-    features = mfcc(S=S, n_mfcc=20)
-    features = (features - features.mean()) / (features.std() + 1e-6)
-    return features.reshape(-1)
+    mel_features = mfcc(S=S, n_mfcc=20)
+    mel_features = (mel_features - mel_features.mean()) / (mel_features.std() + 1e-6)
+
+    features = np.hstack([
+        mel_features.reshape(-1),
+        additional_features(S, start, end)
+    ])
+    return features
+
+def additional_features(spectrogram, start, end):
+    duration = end - start
+    additional_features = np.hstack([
+        duration,
+    ])
+    return additional_features
 
 @lru_cache(maxsize=10)
 def read_audio(f):
@@ -33,13 +45,14 @@ def read_audio(f):
 
 if __name__ == '__main__':
 
-    calls = pd.read_excel(os.path.join(DATA_LOC, 'Calls_ML.xlsx'))
+    calls = pd.read_excel(os.path.join(DATA_LOC, 'Calls_ML_Fix.xlsx'))
     calls.columns = [c.lower().replace(' ', '_') for c in calls.columns]
+    calls.loc[calls.call_type.isna(), 'call_type'] = 'interference'
     calls = calls.loc[calls.start < calls.end].reset_index(drop=True)
     calls['call_type'] = calls.call_type.apply(lambda r: r.split(' ')[0])
 
-    calls.loc[calls.call_type.isin(['Phee', 'Trill']), 'call_type'] = 'PheeTrill'
-    calls.loc[calls.call_type.isin(['Cheep', 'Chuck']), 'call_type'] = 'CheepChuck'
+    # calls.loc[calls.call_type.isin(['Phee', 'Trill']), 'call_type'] = 'PheeTrill'
+    # calls.loc[calls.call_type.isin(['Cheep', 'Chuck']), 'call_type'] = 'CheepChuck'
 
     sr, _ = wav.read(os.path.join(DATA_LOC, 'ML_Test.wav'))
 
@@ -47,6 +60,7 @@ if __name__ == '__main__':
         process(*calls.loc[i, ['file', 'start', 'end']])
         for i in calls.index
     ])
+    X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-12)
 
     y = np.array(calls.call_type, dtype=str)
 
@@ -62,10 +76,10 @@ if __name__ == '__main__':
         accs[seed] = (classifier.predict(Z_test) == y_test).mean()
     accs *= 100
     print(f'Accuracy:{accs.mean().round(2)}%±{2*accs.std().round(1)}%')
-    # 81.15%±4.8%
+    # 75.3% ± 3.6%
 
     Z = np.vstack([Z_train, Z_test])
     plot_y = np.hstack([y_train, y_test])
 
     plot_df = pd.DataFrame(dict(latent_a=Z[:, 0], latent_b=Z[:, 1], call_type=plot_y))
-    sns.scatterplot(data=plot_df, x='latent_a', y='latent_b', hue='call_type')
+    sns.scatterplot(data=plot_df, x='latent_a', y='latent_b', hue='call_type', palette='Paired')
