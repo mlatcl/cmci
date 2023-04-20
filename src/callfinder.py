@@ -1,66 +1,30 @@
 import numpy as np
-from hmmlearn.hmm import GaussianHMM
+from scipy.interpolate import splrep, BSpline
+from scipy.signal import find_peaks
 
 import logging
 
 logging.basicConfig(level=logging.ERROR)
 
 class CallFinder:
-    NOT_CALL_STATE, CALL_STATE = 0, 1
-    n_states = 2
-
     def __init__(self, conditions=None):
-        # states are (no call, call)
-        self.hmm = GaussianHMM(n_components=self.n_states, params="st", init_params="st")
-        self.conditions = [
-            (lambda x: ((x > 1.5e3) & (x < 7.2e3)), False), # trill and chuck
-            # (lambda x: ((x > 7.5e3) & (x < 10e3)), True), #CANOOR + HONK
-            # (lambda x: ((x > 0.5e3) & (x < 1.7e3)), False), # HONK
-            ] if conditions is None else conditions
-        self.hmm.n_features = 1
+        self.band_to_consider = (1.5e3, 7.2e3)
 
-        self.hmm.means_ = np.zeros((self.n_states, self.hmm.n_features)) + 20 # these don't change, the observation parameters.
-        self.hmm.covars_ = np.zeros((self.n_states, self.hmm.n_features)) + 100 # these don't change, the observation parameters.
+    def threshold_spectrum(self, S, f, smoothing=1100, freq_to_ignore=5):
+        spec_with_peaks = np.zeros_like(S)
+        for i in range(len(S.T)):
+            smooth_spec = BSpline(*splrep(f, S[:, i], s=smoothing))(f)
+            peaks, _ = find_peaks(smooth_spec)
+            spec_with_peaks[peaks, i] = 1.0
+        spec_with_peaks[:freq_to_ignore, :] = 0
 
-        self._init_hmm_params(0, call_is_zeroes=False)
-        
-    def _init_hmm_params(self, i, call_is_zeroes=False):
-        """
-        :param:
-        If the feature *i* has non-zero numbers when it is indicating a call, set in_call to True.
-        If the feature has zeroes when it is indicating a call, set in_call to False.
-        """
-        state = self.NOT_CALL_STATE if not call_is_zeroes else self.CALL_STATE
-        self.hmm.means_[state, i] = 0.0
+        # set bands to zero
+        band_min = np.argmin(abs(f - self.band_to_consider[0]))
+        band_max = np.argmin(abs(f - self.band_to_consider[1]))
 
-        covars_ = self.hmm.covars_.copy()
-        covars_[state, i, i] = 1e-2 # sqrt of this * 2 controls roughly how many theshold hits will trigger a "call" signal.
-        self.hmm.covars_ = covars_[:, range(self.hmm.n_features), range(self.hmm.n_features)]
-
-    @staticmethod
-    def threshold_spectrum(S, threshold=0.85, quantile=None, freq_to_ignore=0):
-        """
-        
-        Threshold is how strong of a signal it has to be to survive the binarization (relative to the normalized time window) for peak
-        """
-        if quantile is not None:
-            threshold = np.quantile(S, quantile)
-        S = S > threshold # maybe change this to quantile
-        S[:freq_to_ignore, :] = 0
-        return S
-
-    @staticmethod
-    def whale_threshold_spectrum(S, c1=3, c2=2.5):
-        t1 = c1*np.tile(np.median(S, axis=1)[:, None], (1, S.shape[1]))
-        t2 = c1*np.tile(np.median(S, axis=0)[None, :], (S.shape[0], 1))
-        threshold = np.maximum(t1, t2) / c2
-        return S > threshold
-
-    @staticmethod
-    def normalize_spectrum(S):
-        s_min, s_max = S.min(), S.max()
-        S = (S - s_min) / (s_max - s_min)
-        return S
+        spec_with_peaks[:band_min, :] = 0.0
+        spec_with_peaks[band_max:, :] = 0.0
+        return spec_with_peaks
 
     @staticmethod
     def _compute_one_feature(S, condition):
@@ -71,9 +35,6 @@ class CallFinder:
     def compute_features(self, S, f):
         computed_features = [self._compute_one_feature(S,c[0](f)) for c in self.conditions]
         return np.concatenate(computed_features, axis=1)
-
-    def fit_hmm(self, features):
-        self.hmm.fit(features)
 
     @staticmethod
     def _validate_starts_and_ends(starts, ends):
@@ -108,23 +69,11 @@ class CallFinder:
             return np.zeros((0,2))
 
     def find_calls(self, S, f, t, threshold=10, mininum_call_duration=0.004, threshold_quantile=0.99):
-        nS = self.normalize_spectrum(S)
-        thresholded_spectrum = self.threshold_spectrum(nS, quantile=threshold_quantile)
+        thresholded_spectrum = self.threshold_spectrum(S, f)
+        final_feature = np.clip(thresholded_spectrum.sum(axis=0), 0.0, 1.0)
 
-        # threshold
-        features = self.compute_features(thresholded_spectrum, f)
-        final_feature = np.zeros((features.shape[0], 1)).astype(bool)
-        for i, (c, f) in enumerate(zip(self.conditions, list(features.T))):
-            is_call = not c[1]
-            feat_i = (f > threshold) if is_call else (f <= threshold)
-            final_feature[:, 0] |= feat_i
-            
-        final_feature = final_feature.astype(float)
-        self.fit_hmm(final_feature)
-        labels = self.hmm.predict(final_feature)
-
-        start_end_indices = self.get_starts_and_ends(labels)
+        start_end_indices = self.get_starts_and_ends(final_feature)
         segments = self.clean_labels(t, start_end_indices)
         
         segments = segments[np.diff(segments, axis=1)[:, 0] > mininum_call_duration, :] # filter out short duration calls
-        return segments, thresholded_spectrum, features, final_feature
+        return segments, thresholded_spectrum, final_feature

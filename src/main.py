@@ -76,7 +76,7 @@ def update_initial_exposed(start_time, audio_file_name):
     if audio_file_name is None:
         audio_file_name = '../data/calls_for_ml/ML_Test.wav'
 
-    sampling_rate, audio = wav.read(audio_file_name)
+    sampling_rate, audio = load_audio_file(audio_file_name)
     S, f, t = get_spectrum(start_time=start_time, sampling_rate=sampling_rate, audio=audio, segment_length=segment_length)
 
     slidemarks, t_max = define_slidemarks(sampling_rate, len(audio))
@@ -85,17 +85,12 @@ def update_initial_exposed(start_time, audio_file_name):
     spectrum_fig = px.imshow(S, aspect='auto', x=t, y=f, origin='lower',
         labels=dict(x='Time (sec)', y='Freq (Hz)'))
 
-    segments, thresholded_spectrum, features, final_feature = CALL_FINDER.find_calls(S, f, t)
+    segments, thresholded_spectrum, final_feature = CALL_FINDER.find_calls(S, f, t)
 
     thresholded_spectrum_fig = px.imshow(thresholded_spectrum, aspect='auto', x=t, y=f, origin='lower',
         labels=dict(x='Time (sec)', y='Freq (Hz)'))
     
-    features_fig = px.line(x=t, y=features[:,0])
-    # features_fig = px.line(x=t, y=final_feature[:,0], range_y=(-100, 100))
-    for i in range(0,features.shape[1]):
-        features_fig.add_scatter(x=t, y=features[:,i], mode='lines', name=f'Feature {i}')
-
-    features_fig.add_scatter(x=t, y=final_feature[:,0], mode='lines', name='Final Feature')
+    features_fig = px.line(x=t, y=final_feature)
 
     for segment in segments:
         x0, x1 = segment
