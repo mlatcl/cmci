@@ -3,8 +3,8 @@ import numpy as np
 import plotly.express as px
 from scipy.signal import stft
 from scipy.io import wavfile as wav
-from .callfinder import CallFinder
-from .audio.audio_processing import get_spectrum
+from callfinder import CallFinder
+from audio.audio_processing import get_spectrum, load_audio_file
 
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output
@@ -22,7 +22,7 @@ def define_slidemarks(sampling_rate, audio_len):
     slidemarks = {i: f'{np.round(i/60, 1)}m' for i in np.linspace(0, max_time, 10)}
     return slidemarks, max_time
 
-def get_audio_files(base_dir='../data/'):
+def get_audio_files(base_dir='../data/calls_for_ml/'):
     onlyfiles = [base_dir + f \
         for f in listdir(base_dir) \
         if (isfile(join(base_dir, f)) and f.endswith('.wav')) \
@@ -74,7 +74,7 @@ def update_initial_exposed(start_time, audio_file_name):
     segment_length = 10 # seconds, width of the spectrum we find_calls over and
 
     if audio_file_name is None:
-        audio_file_name = '../data/10MinSample.wav'
+        audio_file_name = '../data/calls_for_ml/ML_Test.wav'
 
     sampling_rate, audio = wav.read(audio_file_name)
     S, f, t = get_spectrum(start_time=start_time, sampling_rate=sampling_rate, audio=audio, segment_length=segment_length)
@@ -107,10 +107,3 @@ def update_initial_exposed(start_time, audio_file_name):
 
 if __name__ == '__main__':
     app.run_server(debug=True, host='0.0.0.0')
-
-## Notes
-"""
-Notes:
-
-Have a way to change parameters like threshold quantile and measure how many calls we find / (how many we (miss?))
-"""
