@@ -6,3 +6,6 @@ tqdm
 torch
 torchvision
 librosa
+plotly
+pandas
+hmmlearn

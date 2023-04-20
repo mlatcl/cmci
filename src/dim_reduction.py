@@ -80,8 +80,6 @@ if __name__ == '__main__':
         specs = [] # list of mel spectrograms, shape = (n_data, n_mels, new_segm_len)
         features = []
 
-
-
         # TODO this is slow.
         thebest_time = time.time()
         # print("Time at {} is {:.2f}".format("start", time.time() - thebest_time))

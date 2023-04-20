@@ -116,6 +116,10 @@ def resize_func(mel_spec, n_mels, new_segm_len):
     return d
 
 def binarize(x):
+    """
+    Thresholding the spectrum here is peak finding.
+    Threshold is 
+    """
     x = CallFinder.threshold_spectrum(CallFinder.normalize_spectrum(x), 0.85, freq_to_ignore=5)
     return x
 

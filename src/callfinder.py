@@ -39,6 +39,10 @@ class CallFinder:
 
     @staticmethod
     def threshold_spectrum(S, threshold=0.85, quantile=None, freq_to_ignore=0):
+        """
+        
+        Threshold is how strong of a signal it has to be to survive the binarization (relative to the normalized time window) for peak
+        """
         if quantile is not None:
             threshold = np.quantile(S, quantile)
         S = S > threshold # maybe change this to quantile
