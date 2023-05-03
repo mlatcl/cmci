@@ -18,7 +18,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.preprocessing import LabelEncoder
-
+from utils import preprocess_call_labels
 DATA_LOC = '../data/calls_for_ml/'
 
 def process_file(f, start, end, sr, n_fft_prop=1/3):
@@ -50,16 +50,12 @@ def read_audio(f):
     return wav.read(os.path.join(DATA_LOC, f))[1].mean(axis=1)
 
 if __name__ == '__main__':
-    CALLS_FILE='Calls_ML_Fix.xlsx'
+    CALLS_FILE='Calls_ML.xlsx'
     AUDIO_FILE='ML_Test.wav'
 
 
     calls = pd.read_excel(os.path.join(DATA_LOC, CALLS_FILE))
-    calls.columns = [c.lower().replace(' ', '_') for c in calls.columns]
-    calls = calls.loc[~calls.call_type.isna() | (calls.interference == 'Conure')].reset_index(drop=True) #drop conure calls?
-    calls.loc[calls.call_type.isna(), 'call_type'] = 'interference' # set all unknown call types to interference
-    calls = calls.loc[calls.start < calls.end].reset_index(drop=True)
-    calls['call_type'] = calls.call_type.apply(lambda r: r.split(' ')[0])
+    calls = preprocess_call_labels(calls)
 
     # Reclassify call clusters
     # calls.loc[calls.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'

@@ -9,3 +9,7 @@ librosa
 plotly
 pandas
 hmmlearn
+dash
+dash_bootstrap_components
+umap-learn
+openpyxl
