@@ -76,7 +76,9 @@ if __name__ == '__main__':
             if file.endswith(".wav"):
                 sampling_rate, audio = wav.read(os.path.join(dir_name, file))
                 print("Time elapsed at start of file {}: {:.2f}s".format(i, time.time() - start))
-                audio = audio[:, 0].astype('f')/1000 # take first channel, scale values down by 1000.
+                if len(audio.shape) ==2:
+                    audio = audio[:, 0]
+                audio=audio.astype('f')/1000 # take first channel, scale values down by 1000.
                 length_secs_audio = (audio.shape[0] // sampling_rate)
                 segment_length = 10 if length_secs_audio > 60 else length_secs_audio - 1 # seconds, width of the spectrum we find_calls over
                 # print("\tAUDIO {} {}".format(audio.shape, length_secs_audio))
