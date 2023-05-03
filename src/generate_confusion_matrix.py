@@ -66,15 +66,30 @@ if __name__ == '__main__':
 
     # Call Matching
     labels['proposed_idx'] = [finder(labels.iloc[i], segments) for i in range(len(labels))]
+
     segments['label_idx'] = [finder(segments.iloc[i], labels) for i in range(len(segments))]
 
-
+    total_labels = len(labels[(labels.file=='ML_Test') & (~labels.interference.isna())])
     labels = labels.loc[~labels.proposed_idx.isna()]
     idxs_that_are_calls = labels.proposed_idx.unique()
     segments.loc[idxs_that_are_calls, 'is_call'] = True
 
-    print(labels)
 
     print(segments)
+    print(labels)
 
     ## Generate confusion matrix
+
+    # How many true calls are we finding 
+    # (how many do we miss)
+    # How many false positives
+    # True negative
+
+    # segments are correct / incorrect
+    # labels are found / not found
+    true_segments = len(segments[segments.is_call == True])
+    found_labels = len(labels)
+    print("Segments correct / incorrect (FP): {} {:.2f}% / {} {:.2f}%".format(true_segments, float(true_segments) / float(len(segments)),  len(segments) - true_segments,  float(len(segments)- true_segments) / float(len(segments))))
+    print("Labels found (TP) / not found (FN): {} {:.2f}% / {} {:.2f}%".format(found_labels, float(found_labels) / float(total_labels), total_labels - found_labels, float(total_labels - found_labels) / float(total_labels)))
+
+
