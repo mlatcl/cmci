@@ -10,7 +10,8 @@ class CallFinder:
     def __init__(self, conditions=None):
         self.band_to_consider = (1.5e3, 7.2e3)
 
-    def threshold_spectrum(self, S, f, smoothing=1100, freq_to_ignore=5):
+    def threshold_spectrum(self, S, f, smoothing=1100, # more smoothing = less peaks
+                           freq_to_ignore=5):
         spec_with_peaks = np.zeros_like(S)
         for i in range(len(S.T)):
             smooth_spec = BSpline(*splrep(f, S[:, i], s=smoothing))(f)
@@ -68,12 +69,13 @@ class CallFinder:
         else:
             return np.zeros((0,2))
 
-    def find_calls(self, S, f, t, threshold=10, mininum_call_duration=0.004, threshold_quantile=0.99):
+    def find_calls(self, S, f, t, threshold=10, mininum_call_duration=0.05):
         thresholded_spectrum = self.threshold_spectrum(S, f)
-        final_feature = np.clip(thresholded_spectrum.sum(axis=0), 0.0, 1.0)
+        feature = thresholded_spectrum.sum(axis=0)
+        final_feature = (feature >= 1.0).astype(float)
 
         start_end_indices = self.get_starts_and_ends(final_feature)
         segments = self.clean_labels(t, start_end_indices)
         
         segments = segments[np.diff(segments, axis=1)[:, 0] > mininum_call_duration, :] # filter out short duration calls
-        return segments, thresholded_spectrum, final_feature
+        return segments, thresholded_spectrum, feature, final_feature

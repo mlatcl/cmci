@@ -19,9 +19,9 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.preprocessing import LabelEncoder
 
-DATA_LOC = '../data/Calls For ML/'
+DATA_LOC = '../data/calls_for_ml/'
 
-def process(f, start, end, sr, n_fft_prop=1/3):
+def process_file(f, start, end, sr, n_fft_prop=1/3):
     a = read_audio(f + '.wav')[int(start * sr):int(end * sr)]
     # S = spectrogram(a, nperseg=len(a)//3, noverlap=len(a)//12, fs=sr)[-1]
     S = np.abs(stft(a,
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     sr, _ = wav.read(os.path.join(DATA_LOC, AUDIO_FILE))
 
     X = np.vstack([
-        process(*calls.loc[i, ['file', 'start', 'end']], sr=sr)
+        process_file(*calls.loc[i, ['file', 'start', 'end']], sr=sr)
         for i in calls.index
     ])
     X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-12)
