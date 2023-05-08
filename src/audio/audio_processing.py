@@ -84,7 +84,8 @@ def get_spectrum(start_time, sampling_rate, audio, segment_length=10):
 @lru_cache(maxsize=100)
 def load_audio_file(filename):
     sr, audio = wav.read(filename)
-    audio = audio[:, 0].astype('f')/1000 # take first channel, scale values down by 1000.
+    if len(audio.shape) == 2:
+        audio = audio[:, 0].astype('f')/1000 # take first channel, scale values down by 1000.
     return sr, audio
 
 def get_spectrum_segment(start, end, filename, extension=1.5):
