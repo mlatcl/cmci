@@ -20,10 +20,11 @@ def load_segments(file_path='segments.json'):
     return segment_list 
 
 
-def preprocess_call_labels(calls_og):
+def preprocess_call_labels(calls_og, keep_only_conures=True):
     calls = calls_og.copy()
     calls.columns = [c.lower().replace(' ', '_') for c in calls.columns]
-    calls = calls.loc[~calls.call_type.isna() | (calls.interference == 'Conure')].reset_index(drop=True) #drop conure calls?
+    if keep_only_conures:
+        calls = calls.loc[~calls.call_type.isna() | (calls.interference == 'Conure')].reset_index(drop=True) #drop conure calls?
     calls.loc[calls.call_type.isna(), 'call_type'] = 'interference' # set all unknown call types to interference
     calls = calls.loc[calls.start < calls.end].reset_index(drop=True)
     calls['call_type'] = calls.call_type.apply(lambda r: r.split(' ')[0])
