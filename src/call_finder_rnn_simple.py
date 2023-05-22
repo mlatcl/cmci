@@ -20,15 +20,27 @@ from sklearn.metrics import confusion_matrix
 
 from loguru import logger; l = logger.debug
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+# MODEL_BUNDLE = torchaudio.pipelines.WAV2VEC2_BASE
+# W2V = MODEL_BUNDLE.get_model().to(device)
+# SR = MODEL_BUNDLE.sample_rate
 SR = 44100
 softplus = torch.nn.Softplus()
+
+def extract_feats(audio_segments, num_layers=3):
+    feats, _ = W2V.extract_features(audio_segments, num_layers=num_layers)
 
 class Files:
     data_loc = '../data_for_expt/'
     lb_data_loc = '../data_for_expt/labelled_data/'
 
-    lb_trn_file = 'ML_Test.wav'
+    ml_test = 'ML_Test.wav'
     labels_file = 'Calls_ML_Fix.xlsx'
+
+    hawaii = 'soundscapes/hawaii.wav'
+    cali = 'soundscapes/cali_3.wav'
+    amazon = 'soundscapes/amazon_3.wav'
 
 def load_audio(file_path):
     sr, audio = load_audio_file(file_path)
@@ -97,35 +109,31 @@ class AudioDataset(torch.utils.data.Dataset):
     def __len__(self):
         return 1
 
-    def get_samples(self, n_samples, audio_len=2.5):
+    def get_samples(self, audio_len=2.5):
         assert audio_len < 5
-        files = []; probs = np.empty(len(self.audio), dtype=float)
-        for i, (f, ln) in enumerate(self.audio_lens.items()):
-            files.append(f)
-            probs[i] = ln[0] if f != 'ML_Test_3' else 0.0
-        probs /= sum(probs)
-
-        files_choose = np.random.choice(files, n_samples, replace=True, p=probs)
+        segm_len = int(self.nps * audio_len)
 
         features = []
         labels = []
 
         l('Processing data.')
-        for i, file in tqdm(enumerate(files_choose)):
-            segm_len = int(audio_len*SR/self.nps)
+        for file in self.features.keys():
             lbs, feats = self.label_ts[file], self.features[file]
+            for i in trange(max(0, len(feats)//segm_len)):
+                start_idx = i*segm_len # np.random.choice(len(feats) - segm_len - 1)
+                end_idx = start_idx + segm_len
 
-            start_idx = np.random.choice(len(feats) - segm_len - 1)
-            end_idx = start_idx + segm_len
-
-            features.append(feats[None, start_idx:end_idx, :].clone())
-            labels.append(lbs[None, start_idx:end_idx].clone())
+                _ft = feats[None, start_idx:end_idx, :].clone()
+                _lb = lbs[None, start_idx:end_idx].clone()
+                if (len(_ft[0]) == len(_lb[0])) and (len(_lb[0]) == segm_len):
+                    features.append(_ft)
+                    labels.append(_lb)
 
         return torch.cat(features, axis=0), torch.cat(labels, axis=0)
 
-    def __getitem__(self, n_samples):
+    def __getitem__(self, *args):
         """ indexing data[n] is the same as data.get_samples(n) """
-        return self.get_samples(n_samples)
+        return self.get_samples()
 
 class Classifier(torch.nn.Module):
     def __init__(self, num_inp, num_lstm=3):
@@ -144,49 +152,59 @@ class Classifier(torch.nn.Module):
 
 if __name__ == '__main__':
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     data_loader = AudioDataset(device=device)
 
     if not os.path.exists('X.pth'):
-        X, y = data_loader[50000]
+        X, y = data_loader[...]
         torch.save(X.cpu(), 'X.pth')
         torch.save(y.cpu(), 'y.pth')
 
     X_full = torch.load('X.pth').to(device)
     y_full = torch.load('y.pth').to(device)
 
+    idx = np.random.choice(
+        y_full.mean(axis=1).sort().indices[-350:].cpu().numpy(),
+        350, replace=False
+    )
+    train_idx, test_idx = idx[:int(0.8*len(idx))], idx[int(0.8*len(idx)):]
+
+    X_train = X_full[train_idx, ...]
+    y_train = y_full[train_idx, ...]
+
+    X_test = X_full[test_idx, ...]
+    y_test = y_full[test_idx, ...].cpu().numpy().reshape(-1)
+
     classifier = Classifier(data_loader.featurizer.n_mfcc).to(device)
 
-    test_feats = data_loader.features['ML_Test_3'][None, ...]
-    y_test = data_loader.label_ts['ML_Test_3'].cpu().numpy()
-
     optimizer = torch.optim.Adam([
-        dict(params=classifier.parameters(), lr=0.01),
+        dict(params=classifier.parameters(), lr=0.001),
     ])
 
-    losses = []; iterator = trange(2000, leave=False)
+    losses = []; iterator = trange(2500, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
-        # idx = np.random.choice(len(X_full), 500)
-        X, y = X_full[:5000], y_full[:5000]
-
-        y_prob = classifier(X)
-        loss = -torch.distributions.Bernoulli(y_prob).log_prob(y).sum()
+        y_prob = classifier(X_train)
+        loss = -torch.distributions.Bernoulli(y_prob).log_prob(y_train).sum()
 
         if i % 100 == 0:
-            tr_cm = confusion_matrix(y.reshape(-1).cpu(), y_prob.round().reshape(-1).detach().cpu(), normalize='all').round(3)*100
+            tr_cm = confusion_matrix(y_train.reshape(-1).cpu(), y_prob.round().reshape(-1).detach().cpu(), normalize='all').round(3)*100
+            tr_cm = (tr_cm[0, 0] + tr_cm[1, 1]).round(2)
 
-            pred = classifier(test_feats)[0].detach().cpu().round()
-            pred[0] = 1
+            pred = classifier(X_test).detach().cpu().round().reshape(-1)
+            pred[0] = 0; pred[-1] = 1
             cm = confusion_matrix(y_test, pred, normalize='all').round(3)*100
+            cm = (cm[0, 0] + cm[1, 1]).round(2)
 
         losses.append(loss.item())
-        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm[0, 0] + tr_cm[1, 1]},Te:{cm[0, 0]+cm[1, 1]}')
+        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm}')
         loss.backward()
         optimizer.step()
 
+    plt.plot(classifier(data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...])[0].detach().cpu())
+    plt.plot(data_loader.label_ts['ML_Test_3'].cpu())
+
     basic_ml_test_cm = get_confusion_matrix(
-        np.array(data_loader.labels.loc[data_loader.labels.file == Files.lb_trn_file.strip('.wav'), ['start', 'end']]),
-        simple_classifier(Files.lb_data_loc + Files.lb_trn_file)
+        np.array(data_loader.labels.loc[data_loader.labels.file == Files.ml_test.strip('.wav'), ['start', 'end']]),
+        simple_classifier(Files.lb_data_loc + Files.ml_test)
     )
