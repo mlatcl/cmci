@@ -22,11 +22,17 @@ from loguru import logger; l = logger.debug
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# MODEL_BUNDLE = torchaudio.pipelines.WAV2VEC2_BASE
-# W2V = MODEL_BUNDLE.get_model().to(device)
-# SR = MODEL_BUNDLE.sample_rate
-SR = 44100
+MODEL_BUNDLE = torchaudio.pipelines.WAV2VEC2_BASE
+W2V = MODEL_BUNDLE.get_model()
+SR = MODEL_BUNDLE.sample_rate
 softplus = torch.nn.Softplus()
+
+def extract_feats(audio_segments):
+    with torch.no_grad():
+        feats = W2V.extract_features(
+            audio_segments
+        )[0][-1].detach()
+    return feats
 
 class Files:
     data_loc = '../data_for_expt/'
@@ -87,13 +93,14 @@ class AudioDataset(torch.utils.data.Dataset):
             ['file', 'call_type', 'start', 'end']
         ].reset_index(drop=True)
 
-        l("Computing mfcc.")
-        self.featurizer = torchaudio.transforms.MFCC(sample_rate=SR, n_mfcc=40).to(device)
+        l("Computing feats.")
+        W2V.to(device)
+        self.featurizer = extract_feats
 
         l("Preprocessing label time series.")
-        self.nps = self.featurizer(torch.zeros(1, SR).to(device)).shape[-1]
+        self.nps = self.featurizer(torch.zeros(1, SR).to(device)).shape[1] + 1
 
-        self.features = {k: self.featurizer(a).T for k, a in self.audio.items()}
+        self.features = {k: self.featurizer(a[None, ...])[0] for k, a in self.audio.items()}
 
         self.label_ts = {k: None for k in self.audio.keys()}
         ts = {k: self.audio_lens[k][-1]*torch.arange(f.shape[0]).to(device)/f.shape[0] for k, f in self.features.items()}
@@ -129,6 +136,7 @@ class AudioDataset(torch.utils.data.Dataset):
         return torch.cat(features, axis=0), torch.cat(labels, axis=0)
 
     def __getitem__(self, *args):
+        """ indexing data[n] is the same as data.get_samples(n) """
         return self.get_samples()
 
 class Classifier(torch.nn.Module):
@@ -146,11 +154,21 @@ class Classifier(torch.nn.Module):
         out = self.fc(out).sigmoid()[..., 0]
         return out
 
+class SimpleClf(torch.nn.Module):
+    def __init__(self, num_inp):
+        super().__init__()
+        self.nn = torch.nn.Sequential(
+            torch.nn.Linear(num_inp, 1),
+            torch.nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        return self.nn(x)[..., 0]
+
 if __name__ == '__main__':
 
-    data_loader = AudioDataset(device=device)
-
     if not os.path.exists('X.pth'):
+        data_loader = AudioDataset(device=device)
         X, y = data_loader[...]
         torch.save(X.cpu(), 'X.pth')
         torch.save(y.cpu(), 'y.pth')
@@ -170,7 +188,8 @@ if __name__ == '__main__':
     X_test = X_full[test_idx, ...]
     y_test = y_full[test_idx, ...].cpu().numpy().reshape(-1)
 
-    classifier = Classifier(data_loader.featurizer.n_mfcc).to(device)
+    n_feats = MODEL_BUNDLE._params['encoder_embed_dim']  # data_loader.featurizer.n_mfcc
+    classifier = SimpleClf(n_feats).to(device)
 
     optimizer = torch.optim.Adam([
         dict(params=classifier.parameters(), lr=0.001),
@@ -197,8 +216,8 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-    plt.plot(classifier(data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...])[0].detach().cpu())
-    plt.plot(data_loader.label_ts['ML_Test_3'].cpu())
+    # plt.plot(classifier(data_loader.featurizer(data_loader.audio['ML_Test_3'][None, ...]))[0].detach().cpu())
+    # plt.plot(data_loader.label_ts['ML_Test_3'].cpu())
 
     basic_ml_test_cm = get_confusion_matrix(
         np.array(data_loader.labels.loc[data_loader.labels.file == Files.ml_test.strip('.wav'), ['start', 'end']]),
