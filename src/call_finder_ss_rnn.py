@@ -28,6 +28,7 @@ softplus = torch.nn.Softplus()
 class Files:
     data_loc = '../data_for_expt/'
     lb_data_loc = '../data_for_expt/labelled_data/'
+    unlb_data_loc = '../data_for_expt/banham_samples/'
 
     ml_test = 'ML_Test.wav'
     labels_file = 'Calls_ML_Fix.xlsx'
@@ -71,6 +72,10 @@ def get_confusion_matrix(segments_true, segments_pred):
 
 class AudioDataset(torch.utils.data.Dataset):
     def __init__(self, device='cpu'):
+        self._init_labelled_data(device):
+        self._init_unlabelled_data(device):
+
+    def _init_labelled_data(self, device):
         self.audio = {
             f.replace('.wav', ''): load_audio(Files.lb_data_loc + f).to(device) for f in os.listdir(Files.lb_data_loc) if '.wav' in f
         }
@@ -83,6 +88,44 @@ class AudioDataset(torch.utils.data.Dataset):
             (calls.call_type != 'interference'),
             ['file', 'call_type', 'start', 'end']
         ].reset_index(drop=True)
+
+        l("Computing mfcc.")
+        self.featurizer = torchaudio.transforms.MFCC(sample_rate=SR, n_mfcc=40).to(device)
+
+        l("Preprocessing label time series.")
+        self.nps = self.featurizer(torch.zeros(1, SR).to(device)).shape[-1]
+
+        self.features = {k: self.featurizer(a).T for k, a in self.audio.items()}
+
+        self.label_ts = {k: None for k in self.audio.keys()}
+        ts = {k: self.audio_lens[k][-1]*torch.arange(f.shape[0]).to(device)/f.shape[0] for k, f in self.features.items()}
+        for k in ts.keys():
+            temp_df = np.asarray(self.labels.loc[self.labels.file == k, ['start', 'end']])
+            self.label_ts[k] = torch.zeros_like(ts[k])
+            for start, end in temp_df:
+                self.label_ts[k][(ts[k] >= start) & (ts[k] < end)] = 1.0
+
+    def _init_unlabelled_data(self):
+        self.audio = {
+            f.replace('.wav', ''): load_audio(Files.lb_data_loc + 'ML_Test.wav').to(device) for f in [Files.lb_data_loc + 'ML_Test.wav'] if '.wav' in f
+        }
+        self.audio_lens = {k: (len(a), len(a)/SR) for k, a in self.audio.items()}
+
+        l("Processing unlabelled data.")
+        if not os.path.exists(Files.unlb_data_loc + 'labels.csv'):
+            calls = {
+                f.replace('.wav', ''): simple_classifier(Files.lb_data_loc + 'ML_Test.wav') for f in tqdm([Files.lb_data_loc + 'ML_Test.wav']) if '.wav' in f
+            }
+            def df_maker(key, call_array):
+                calls_df = pd.DataFrame(call_array)
+                calls_df.columns = ['start', 'end']
+                calls_df['file'] = key
+                return calls_df
+
+            self.labels = pd.concat([df_maker(key, call_array) for key, call_array in calls.items()]).reset_index(drop=True)
+            self.labels.to_csv(Files.unlb_data_loc + 'labels.csv', index=False)
+        else:
+            self.labels = pd.read_csv(Files.unlb_data_loc + 'labels.csv')
 
         l("Computing mfcc.")
         self.featurizer = torchaudio.transforms.MFCC(sample_rate=SR, n_mfcc=40).to(device)
