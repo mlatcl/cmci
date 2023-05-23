@@ -17,12 +17,15 @@ from utils import preprocess_call_labels
 from callfinder import CallFinder as CallFinderBasic
 from audio.audio_processing import get_spectrum, load_audio_file
 from sklearn.metrics import confusion_matrix
+from callfinder import CallFinder as CallFinderBasic
 
 from loguru import logger; l = logger.debug
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 SR = 44100
+N_MELS = 40
+FEATURIZER = torchaudio.transforms.MFCC(sample_rate=SR, n_mfcc=N_MELS).to(device)
 softplus = torch.nn.Softplus()
 
 class Files:
@@ -85,7 +88,7 @@ class AudioDataset(torch.utils.data.Dataset):
         ].reset_index(drop=True)
 
         l("Computing mfcc.")
-        self.featurizer = torchaudio.transforms.MFCC(sample_rate=SR, n_mfcc=40).to(device)
+        self.featurizer = FEATURIZER
 
         l("Preprocessing label time series.")
         self.nps = self.featurizer(torch.zeros(1, SR).to(device)).shape[-1]
@@ -143,6 +146,29 @@ class Classifier(torch.nn.Module):
         out = self.fc(out).sigmoid()[..., 0]
         return out
 
+class CallFinder(CallFinderBasic):
+    def __init__(self):
+        super().__init__()
+        self.classifier = Classifier(N_MELS)
+        self.classifier.load_state_dict(torch.load('simple_rnn_sd.pth'))
+        self.classifier.to(device)
+
+        self.featurizer = FEATURIZER
+
+    def find_calls_rnn(self, audio, mininum_call_duration=0.05):
+        feats = self.featurizer(torch.tensor(audio).to(device)).T
+        max_t = len(audio)/SR
+        t = max_t * np.arange(len(feats)) / len(feats)
+
+        with torch.no_grad():
+            final_feature = classifier(feats[None, ...])[0].cpu().detach().numpy().round()
+
+        start_end_indices = self.get_starts_and_ends(final_feature)
+        segments = self.clean_labels(t, start_end_indices)
+        
+        segments = segments[np.diff(segments, axis=1)[:, 0] > mininum_call_duration, :] # filter out short duration calls
+        return segments, final_feature
+
 if __name__ == '__main__':
 
     data_loader = AudioDataset(device=device)
@@ -167,7 +193,7 @@ if __name__ == '__main__':
     X_test = X_full[test_idx, ...]
     y_test = y_full[test_idx, ...].cpu().numpy().reshape(-1)
 
-    classifier = Classifier(data_loader.featurizer.n_mfcc).to(device)
+    classifier = Classifier(N_MELS).to(device)
 
     optimizer = torch.optim.Adam([
         dict(params=classifier.parameters(), lr=0.001),
@@ -194,8 +220,11 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-    plt.plot(classifier(data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...])[0].detach().cpu())
-    plt.plot(data_loader.label_ts['ML_Test_3'].cpu())
+    torch.save(classifier.cpu().state_dict(), 'simple_rnn_sd.pth')
+    classifier.to(device)
+
+    # plt.plot(classifier(data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...])[0].detach().cpu())
+    # plt.plot(data_loader.label_ts['ML_Test_3'].cpu())
 
     basic_ml_test_cm = get_confusion_matrix(
         np.array(data_loader.labels.loc[data_loader.labels.file == Files.ml_test.strip('.wav'), ['start', 'end']]),
