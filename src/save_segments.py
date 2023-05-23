@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import time
+from audio.audio_processing import load_audio_file
 
 
 def download_s3_folder(bucket, s3_folder, local_dir=None):
@@ -74,11 +75,7 @@ if __name__ == '__main__':
         print("Walking directory {}".format(dir_name))
         for i, file in enumerate(files):
             if file.endswith(".wav"):
-                sampling_rate, audio = wav.read(os.path.join(dir_name, file))
-                print("Time elapsed at start of file {}: {:.2f}s".format(i, time.time() - start))
-                if len(audio.shape) ==2:
-                    audio = audio[:, 0]
-                audio=audio.astype('f')/1000 # take first channel, scale values down by 1000.
+                sampling_rate, audio = load_audio_file(dir_name + file)
                 length_secs_audio = (audio.shape[0] // sampling_rate)
                 segment_length = 10 if length_secs_audio > 60 else length_secs_audio - 1 # seconds, width of the spectrum we find_calls over
                 # print("\tAUDIO {} {}".format(audio.shape, length_secs_audio))

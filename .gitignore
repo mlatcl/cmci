@@ -8,3 +8,4 @@ tmp/*
 *ipynb_checkpoints*
 *.npy
 *.xlsx
+*:Zone.Identifier

@@ -18,7 +18,7 @@ app = Dash(__name__, external_stylesheets=[dbc.themes.YETI])
 
 CALL_FINDER = CallFinder()
 
-calls = pd.read_excel('../data/calls_for_ml/Calls_ML_Fix.xlsx')
+calls = pd.read_excel('../data/banham/Calls_ML.xlsx')
 calls.columns = [c.lower().replace(' ', '_') for c in calls.columns]
 calls['file'] += '.wav'
 
@@ -27,12 +27,12 @@ def define_slidemarks(sampling_rate, audio_len):
     slidemarks = {i: f'{np.round(i/60, 1)}m' for i in np.linspace(0, max_time, 10)}
     return slidemarks, max_time
 
-def get_audio_files(base_dir='../data/calls_for_ml/'):
-    onlyfiles = [base_dir + f \
-        for f in listdir(base_dir) \
-        if (isfile(join(base_dir, f)) and f.endswith('.wav')) \
-    ]
-    return onlyfiles
+import os
+from glob import glob
+
+def get_audio_files(base_dir='../data/'):
+    result = [y for x in os.walk(base_dir) for y in glob(os.path.join(x[0], '*.wav'))]
+    return result
 
 app.layout = html.Div(children=[
 
@@ -79,13 +79,13 @@ def update_initial_exposed(start_time, audio_file_name):
     segment_length = 10 # seconds, width of the spectrum we find_calls over and
 
     if audio_file_name is None:
-        audio_file_name = '../data/calls_for_ml/ML_Test.wav'
+        audio_file_name = '../data/banham/ML_Test.wav'
 
     sampling_rate, audio = load_audio_file(audio_file_name)
     S, f, t = get_spectrum(start_time=start_time, sampling_rate=sampling_rate, audio=audio, segment_length=segment_length)
 
     slidemarks, t_max = define_slidemarks(sampling_rate, len(audio))
-    options = get_audio_files()
+    options = get_audio_files(base_dir='../data/')
 
     spectrum_fig = px.imshow(S, aspect='auto', x=t, y=f, origin='lower',
         labels=dict(x='Time (sec)', y='Freq (Hz)'), color_continuous_scale='greys')
