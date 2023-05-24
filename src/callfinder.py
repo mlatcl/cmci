@@ -7,7 +7,7 @@ import logging
 logging.basicConfig(level=logging.ERROR)
 
 class CallFinder:
-    def __init__(self, conditions=None):
+    def __init__(self):
         self.band_to_consider = (1.5e3, 7.2e3)
 
     def threshold_spectrum(self, S, f, smoothing=1100, # more smoothing = less peaks
@@ -69,10 +69,10 @@ class CallFinder:
         else:
             return np.zeros((0,2))
 
-    def find_calls(self, S, f, t, threshold=10, mininum_call_duration=0.05):
+    def find_calls(self, S, f, t, threshold=1.0, mininum_call_duration=0.05):
         thresholded_spectrum = self.threshold_spectrum(S, f)
         feature = thresholded_spectrum.sum(axis=0)
-        final_feature = (feature >= 1.0).astype(float)
+        final_feature = (feature >= threshold).astype(float)
 
         start_end_indices = self.get_starts_and_ends(final_feature)
         segments = self.clean_labels(t, start_end_indices)
