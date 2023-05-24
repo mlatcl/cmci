@@ -69,8 +69,8 @@ class CallFinder:
         else:
             return np.zeros((0,2))
 
-    def find_calls(self, S, f, t, threshold=1.0, mininum_call_duration=0.05):
-        thresholded_spectrum = self.threshold_spectrum(S, f)
+    def find_calls(self, S, f, t, threshold=1.0, mininum_call_duration=0.05, smoothing=1100):
+        thresholded_spectrum = self.threshold_spectrum(S, f, smoothing=smoothing)
         feature = thresholded_spectrum.sum(axis=0)
         final_feature = (feature >= threshold).astype(float)
 
