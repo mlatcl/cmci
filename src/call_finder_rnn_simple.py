@@ -20,6 +20,7 @@ from sklearn.metrics import confusion_matrix
 from callfinder import CallFinder as CallFinderBasic
 
 from loguru import logger; l = logger.debug
+import wandb
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -44,7 +45,7 @@ def load_audio(file_path):
     audio = torchaudio.functional.resample(torch.tensor(audio), sr, SR)
     return audio
 
-def simple_classifier(file_path):
+def simple_classifier(file_path, **kwargs):
     sr, audio = load_audio_file(file_path)
 
     S, f, t = get_spectrum(
@@ -55,7 +56,7 @@ def simple_classifier(file_path):
     )
 
     call_finder = CallFinderBasic()
-    return call_finder.find_calls(S, f, t)[0]
+    return call_finder.find_calls(S, f, t, **kwargs)[0]
 
 def get_confusion_matrix(segments_true, segments_pred):
     t_start, t_end, t_step = 0, max(np.max(segments_true), np.max(segments_pred)), 0.05
@@ -70,7 +71,7 @@ def get_confusion_matrix(segments_true, segments_pred):
         for (t_start, t_end) in segments:
             arrays[name][(t >= t_start) & (t <= t_end)] = 1.0
 
-    return confusion_matrix(arrays['true'], arrays['pred'], normalize='pred').round(3)*100
+    return confusion_matrix(arrays['true'], arrays['pred'], normalize='all').round(3)*100
 
 class AudioDataset(torch.utils.data.Dataset):
     def __init__(self, device='cpu'):
@@ -82,10 +83,22 @@ class AudioDataset(torch.utils.data.Dataset):
         l("Processing labelled data.")
         calls = pd.read_excel(os.path.join(Files.lb_data_loc, Files.labels_file))
         calls = preprocess_call_labels(calls, keep_only_conures=False)
-        self.labels = calls.loc[
+        calls = calls.loc[
             (calls.call_type != 'interference'),
             ['file', 'call_type', 'start', 'end']
-        ].reset_index(drop=True)
+        ]
+
+        calls_shaldon = pd.read_excel(os.path.join(Files.lb_data_loc, 'Shaldon_Training_Labels.xlsx'))
+        calls_shaldon = calls_shaldon.loc[~calls_shaldon.Call_Type.isna(), ['File', 'Call_Type', 'Start', 'End']]
+        calls_shaldon['File'] = 'Shaldon_Combined'
+        calls_shaldon.columns = calls_shaldon.columns.str.lower()
+
+        calls_blackpool = pd.read_excel(os.path.join(Files.lb_data_loc, 'Blackpool_Labels.xlsx'))
+        calls_blackpool = calls_blackpool.loc[~calls_blackpool.Call_Type.isna(), ['File', 'Call_Type', 'Start', 'End']]
+        calls_blackpool['File'] = 'Blackpool_Combined_FINAL'
+        calls_blackpool.columns = calls_blackpool.columns.str.lower()
+
+        self.labels = pd.concat([calls, calls_shaldon, calls_blackpool], axis=0).reset_index(drop=True)
 
         l("Computing mfcc.")
         self.featurizer = FEATURIZER
@@ -102,6 +115,7 @@ class AudioDataset(torch.utils.data.Dataset):
             self.label_ts[k] = torch.zeros_like(ts[k])
             for start, end in temp_df:
                 self.label_ts[k][(ts[k] >= start) & (ts[k] < end)] = 1.0
+        self.ts = ts
 
     def __len__(self):
         return 1
@@ -114,7 +128,9 @@ class AudioDataset(torch.utils.data.Dataset):
         labels = []
 
         l('Processing data.')
-        for file in self.features.keys():
+        files_to_process = [f for f in self.features.keys() if f != 'ML_Test_3']
+        for file in files_to_process:
+            l(f'Processing {file}')
             lbs, feats = self.label_ts[file], self.features[file]
             for i in trange(max(0, len(feats)//segm_len)):
                 start_idx = i*segm_len # np.random.choice(len(feats) - segm_len - 1)
@@ -135,12 +151,13 @@ class Classifier(torch.nn.Module):
     def __init__(self, num_inp, num_lstm=3):
         super().__init__()
         self.num_lstm = num_lstm
-        self.lstm = torch.nn.LSTM(num_inp, 10, num_lstm, batch_first=True)
-        self.fc = torch.nn.Linear(10, 1)
+        self.lstm = torch.nn.LSTM(num_inp, 16, num_lstm, batch_first=True)
+        self.fc = torch.nn.Linear(16, 1)
 
     def forward(self, x):
-        h0 = torch.zeros(self.num_lstm, x.size(0), 10).to(x.device)
-        c0 = torch.zeros(self.num_lstm, x.size(0), 10).to(x.device)
+        x = (x - x.mean(axis=-1)[..., None]) / (x.std(axis=-1)[..., None] + 1e-9)
+        h0 = torch.zeros(self.num_lstm, x.size(0), 16).to(x.device).normal_()*0.01
+        c0 = torch.zeros(self.num_lstm, x.size(0), 16).to(x.device).normal_()*0.01
 
         out, _ = self.lstm(x, (h0, c0))
         out = self.fc(out).sigmoid()[..., 0]
@@ -155,13 +172,13 @@ class CallFinder(CallFinderBasic):
 
         self.featurizer = FEATURIZER
 
-    def find_calls_rnn(self, audio, mininum_call_duration=0.05):
+    def find_calls_rnn(self, audio, threshold=0.5, mininum_call_duration=0.05):
         feats = self.featurizer(torch.tensor(audio).to(device)).T
         max_t = len(audio)/SR
         t = max_t * np.arange(len(feats)) / len(feats)
 
         with torch.no_grad():
-            final_feature = classifier(feats[None, ...])[0].cpu().detach().numpy().round()
+            final_feature = (self.classifier(feats[None, ...])[0].cpu().detach().numpy() > threshold).astype(float)
 
         start_end_indices = self.get_starts_and_ends(final_feature)
         segments = self.clean_labels(t, start_end_indices)
@@ -172,20 +189,10 @@ class CallFinder(CallFinderBasic):
 if __name__ == '__main__':
 
     data_loader = AudioDataset(device=device)
+    X_full, y_full = data_loader[...]
 
-    if not os.path.exists('X.pth'):
-        X, y = data_loader[...]
-        torch.save(X.cpu(), 'X.pth')
-        torch.save(y.cpu(), 'y.pth')
-
-    X_full = torch.load('X.pth').to(device)
-    y_full = torch.load('y.pth').to(device)
-
-    idx = np.random.choice(
-        y_full.mean(axis=1).sort().indices[-400:].cpu().numpy(),
-        400, replace=False
-    )
-    train_idx, test_idx = idx[:int(0.8*len(idx))], idx[int(0.8*len(idx)):]
+    idx = np.random.choice(len(y_full), len(y_full), replace=False)
+    train_idx, test_idx = idx[:int(0.9*len(idx))], idx[int(0.9*len(idx)):]
 
     X_train = X_full[train_idx, ...]
     y_train = y_full[train_idx, ...]
@@ -193,21 +200,28 @@ if __name__ == '__main__':
     X_test = X_full[test_idx, ...]
     y_test = y_full[test_idx, ...].cpu().numpy().reshape(-1)
 
+    X_test_2 = data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...]
+    y_test_2 = data_loader.label_ts['ML_Test_3'].cpu().numpy()
+
     classifier = Classifier(N_MELS).to(device)
 
     optimizer = torch.optim.Adam([
         dict(params=classifier.parameters(), lr=0.001),
     ])
 
+    wandb.init(project="monke")
+
     losses = []; iterator = trange(2500, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
-        y_prob = classifier(X_train)
-        loss = -torch.distributions.Bernoulli(y_prob).log_prob(y_train).sum()
+        idx = np.random.choice(len(y_train), 500)
+
+        y_prob = classifier(X_train[idx])
+        loss = -torch.distributions.Bernoulli(y_prob).log_prob(y_train[idx]).sum()
 
         if i % 100 == 0:
-            tr_cm = confusion_matrix(y_train.reshape(-1).cpu(), y_prob.round().reshape(-1).detach().cpu(), normalize='all').round(3)*100
+            tr_cm = confusion_matrix(y_train[idx].reshape(-1).cpu(), y_prob.round().reshape(-1).detach().cpu(), normalize='all').round(3)*100
             tr_cm = (tr_cm[0, 0] + tr_cm[1, 1]).round(2)
 
             pred = classifier(X_test).detach().cpu().round().reshape(-1)
@@ -215,18 +229,33 @@ if __name__ == '__main__':
             cm = confusion_matrix(y_test, pred, normalize='all').round(3)*100
             cm = (cm[0, 0] + cm[1, 1]).round(2)
 
+            pred_2 = classifier(X_test_2)[0].detach().cpu().numpy()
+            cm_2 = confusion_matrix(y_test_2, pred_2.round(), normalize='all').round(3)*100
+            cm_2 = (cm_2[0, 0] + cm_2[1, 1]).round(2)
+
         losses.append(loss.item())
-        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm}')
+        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm},Te2:{cm_2}')
+        wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_mlt3=cm_2))
         loss.backward()
         optimizer.step()
 
     torch.save(classifier.cpu().state_dict(), 'simple_rnn_sd.pth')
     classifier.to(device)
 
-    # plt.plot(classifier(data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...])[0].detach().cpu())
-    # plt.plot(data_loader.label_ts['ML_Test_3'].cpu())
+    # plt.plot(pred_2)
+    # plt.plot(y_test_2)
 
     basic_ml_test_cm = get_confusion_matrix(
         np.array(data_loader.labels.loc[data_loader.labels.file == Files.ml_test.strip('.wav'), ['start', 'end']]),
         simple_classifier(Files.lb_data_loc + Files.ml_test)
+    )
+
+    basic_blackpool_cm = get_confusion_matrix(
+        np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
+        simple_classifier(Files.lb_data_loc + 'Blackpool_Combined_FINAL.wav', smoothing=1300)
+    )
+
+    rnn_blackpool_cm = get_confusion_matrix(
+        np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
+        CallFinder().find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])[0]
     )
