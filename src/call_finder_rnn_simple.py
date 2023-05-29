@@ -126,6 +126,7 @@ class AudioDataset(torch.utils.data.Dataset):
 
         features = []
         labels = []
+        zoos = []
 
         l('Processing data.')
         files_to_process = [f for f in self.features.keys() if f != 'ML_Test_3']
@@ -141,8 +142,10 @@ class AudioDataset(torch.utils.data.Dataset):
                 if (len(_ft[0]) == len(_lb[0])) and (len(_lb[0]) == segm_len):
                     features.append(_ft)
                     labels.append(_lb)
+                    zoos.append(np.array([file]*segm_len, dtype=str)[None, ...])
 
-        return torch.cat(features, axis=0), torch.cat(labels, axis=0)
+        return (torch.cat(features, axis=0), torch.cat(labels, axis=0),
+                np.concatenate(zoos, axis=0))
 
     def __getitem__(self, *args):
         return self.get_samples()
@@ -189,7 +192,7 @@ class CallFinder(CallFinderBasic):
 if __name__ == '__main__':
 
     data_loader = AudioDataset(device=device)
-    X_full, y_full = data_loader[...]
+    X_full, y_full, z_full = data_loader[...]
 
     idx = np.random.choice(len(y_full), len(y_full), replace=False)
     train_idx, test_idx = idx[:int(0.9*len(idx))], idx[int(0.9*len(idx)):]
@@ -199,6 +202,13 @@ if __name__ == '__main__':
 
     X_test = X_full[test_idx, ...]
     y_test = y_full[test_idx, ...].cpu().numpy().reshape(-1)
+    z_test = z_full[test_idx, ...].reshape(-1)
+
+    conv = {'Blackpool_Combined_FINAL': 'blackpool', 'Shaldon_Combined': 'shaldon',
+            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham'}
+
+    for k, repl in conv.items():
+        z_test[z_test == k] = repl
 
     X_test_2 = data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...]
     y_test_2 = data_loader.label_ts['ML_Test_3'].cpu().numpy()
@@ -209,9 +219,9 @@ if __name__ == '__main__':
         dict(params=classifier.parameters(), lr=0.001),
     ])
 
-    wandb.init(project="monke")
+    # wandb.init(project="monke")
 
-    losses = []; iterator = trange(2500, leave=False)
+    losses = []; iterator = trange(2000, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
@@ -235,15 +245,25 @@ if __name__ == '__main__':
 
         losses.append(loss.item())
         iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm},Te2:{cm_2}')
-        wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_mlt3=cm_2))
+        # wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_mlt3=cm_2))
         loss.backward()
         optimizer.step()
 
     torch.save(classifier.cpu().state_dict(), 'simple_rnn_sd.pth')
     classifier.to(device)
 
-    # plt.plot(pred_2)
-    # plt.plot(y_test_2)
+    for zoo in np.unique(z_test):
+        _cm = confusion_matrix(y_test[z_test == zoo], pred.round()[z_test == zoo],
+                               normalize='all').round(3)*100
+        print(f'{zoo}:{_cm[0, 0] + _cm[1, 1]}')
+
+    plt.rcParams["figure.figsize"] = (7, 2)
+    plt.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), classifier(data_loader.features['Blackpool_Combined_FINAL'][None, :1000, :])[0].cpu().detach(), label='model predictions')
+    plt.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), data_loader.label_ts['Blackpool_Combined_FINAL'][:1000].cpu(), label='test data')
+    plt.xlabel('time (s)')
+    plt.ylabel('(probability of) call')
+    plt.tight_layout()
+    plt.legend(loc='center right')
 
     basic_ml_test_cm = get_confusion_matrix(
         np.array(data_loader.labels.loc[data_loader.labels.file == Files.ml_test.strip('.wav'), ['start', 'end']]),
