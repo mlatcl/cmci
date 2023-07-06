@@ -23,6 +23,7 @@ from loguru import logger; l = logger.debug
 
 MODEL_BUNDLE = torchaudio.pipelines.WAV2VEC2_XLSR53
 SR = MODEL_BUNDLE.sample_rate
+softplus = torch.nn.Softplus()
 
 class Files:
     data_loc = '../data_for_expt/'
@@ -150,37 +151,37 @@ class AudioDataset(torch.utils.data.Dataset):
 
     def get_samples(self, n_samples):
         idx_pos = np.random.choice(len(self.labelled_segments), n_samples)
-        idx_mix = np.random.choice(len(self.unlabelled_segments), n_samples)
+        # idx_mix = np.random.choice(len(self.unlabelled_segments), n_samples)
 
         X_pos = [self.labelled_segments[i] for i in idx_pos]
         X_pos = [x/x.std() for x in X_pos]
         max_len = max(int(0.5 * SR), max([len(x) for x in X_pos]))
 
-        X_mix = [self.unlabelled_segments[i] for i in idx_mix]
-        X_mix = [x/x.std() for x in X_mix]
+        # X_mix = [self.unlabelled_segments[i] for i in idx_mix]
+        # X_mix = [x/x.std() for x in X_mix]
 
         pos_samples = self.get_soundscape_samples(n_samples, max_len)
         neg_samples = self.get_soundscape_samples(n_samples, max_len)
-        mix_samples = self.get_soundscape_samples(n_samples, max_len)
+        # mix_samples = self.get_soundscape_samples(n_samples, max_len)
 
         for i, x in enumerate(X_pos):
             if len(x) >= max_len:
-                mix_samples[i, :] = (mix_samples[i, :] + x[:max_len])/2
+                pos_samples[i, :] = (pos_samples[i, :] + x[:max_len])/2
             else:
                 start_idx = np.random.choice(max_len - len(x))
                 end_idx = start_idx + len(x)
                 pos_samples[i, start_idx:end_idx] = (pos_samples[i, start_idx:end_idx] + x)/2
 
-        for i, x in enumerate(X_mix):
-            if len(x) >= max_len:
-                mix_samples[i, :] = (mix_samples[i, :] + x[:max_len])/2
-            else:
-                start_idx = np.random.choice(max_len - len(x))
-                end_idx = start_idx + len(x)
-                mix_samples[i, start_idx:end_idx] = (mix_samples[i, start_idx:end_idx] + x)/2
+        # for i, x in enumerate(X_mix):
+        #     if len(x) >= max_len:
+        #         mix_samples[i, :] = (mix_samples[i, :] + x[:max_len])/2
+        #     else:
+        #         start_idx = np.random.choice(max_len - len(x))
+        #         end_idx = start_idx + len(x)
+        #         mix_samples[i, start_idx:end_idx] = (mix_samples[i, start_idx:end_idx] + x)/2
 
-        return (torch.cat([neg_samples, mix_samples, pos_samples], axis=0),
-                torch.repeat_interleave(torch.arange(3), n_samples))
+        return (torch.cat([neg_samples, pos_samples], axis=0),  # mix_samples
+                torch.repeat_interleave(torch.arange(2), n_samples))
 
     def _get_one_soundscape_sample(self, max_len):
         audio = tuple(self.soundscapes.values())[np.random.choice(len(self.soundscapes))]
@@ -196,25 +197,51 @@ class AudioDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, n_samples):
         """ indexing data[n] is the same as data.get_samples(n) """
-        return get_samples(n_samples)
+        return self.get_samples(n_samples)
 
 class Classifier(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, n_transforms=3):
         super().__init__()
+        self.n_transforms = n_transforms
         self.audio_model = MODEL_BUNDLE.get_model()
-        self.lstm = nn.LSTM(input_size=n_timepoints, hidden_size=hidden_size, num_layers=n_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, n_classes)
-        self.softmax = nn.Softmax(dim=2)
+
+        for p in self.audio_model.parameters():
+            p.requires_grad_(False)
+
+        self.linear = torch.nn.Linear(
+            MODEL_BUNDLE._params['encoder_embed_dim'] * n_transforms, 1)
 
     def forward(self, x):
-        torch.cat(self.audio_model.extract_features(x, num_layers=2)[0], axis=2)
-        pass
+        x = torch.cat(self.audio_model.extract_features(x, num_layers=3)[0], axis=2).detach()
+        y_pred = softplus(self.linear(x)).max(dim=-1).values.max(dim=-1).values.sigmoid()
+        return y_pred
 
 if __name__ == '__main__':
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     data = AudioDataset()
+    classifier = Classifier().to(device)
+
+    optimizer = torch.optim.Adam([
+        dict(params=classifier.linear.parameters(), lr=0.001),
+    ])
+
+    losses = []; iterator = trange(1000, leave=False)
+    for i in iterator:
+        optimizer.zero_grad()
+
+        X, y = data[100]
+        X = X.to(device)
+        y = y.to(device)
+
+        y_prob = classifier(X)
+        loss = -torch.distributions.Bernoulli(y_prob).log_prob(y.float()).sum()
+
+        losses.append(loss.item())
+        iterator.set_description(f'L:{np.round(loss.item(), 2)}')
+        loss.backward()
+        optimizer.step()
 
     basic_ml_test_cm = get_confusion_matrix(
         np.array(data.labels_df.loc[data.labels_df.file == Files.lb_trn_file.replace('.wav', ''), ['start', 'end']]),
