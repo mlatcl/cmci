@@ -19,7 +19,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.preprocessing import LabelEncoder
 from utils import preprocess_call_labels
-DATA_LOC = '../data/calls_for_ml/'
+
+DATA_LOC = '../data_for_expt/labelled_data/'
 
 def process_file(f, start, end, sr, n_fft_prop=1/3):
     a = read_audio(f + '.wav')[int(start * sr):int(end * sr)]
@@ -50,12 +51,13 @@ def read_audio(f):
     return wav.read(os.path.join(DATA_LOC, f))[1].mean(axis=1)
 
 if __name__ == '__main__':
-    CALLS_FILE='Calls_ML.xlsx'
+    CALLS_FILE='Calls_ML_Fix.xlsx'
     AUDIO_FILE='ML_Test.wav'
-
 
     calls = pd.read_excel(os.path.join(DATA_LOC, CALLS_FILE))
     calls = preprocess_call_labels(calls)
+
+    calls = calls.loc[calls.call_type != 'interference'].reset_index(drop=True)
 
     # Reclassify call clusters
     # calls.loc[calls.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'
