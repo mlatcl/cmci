@@ -170,7 +170,7 @@ class CallFinder(CallFinderBasic):
     def __init__(self):
         super().__init__()
         self.classifier = Classifier(N_MELS)
-        self.classifier.load_state_dict(torch.load('simple_rnn_sd.pth'))
+        self.classifier.load_state_dict(torch.load(Files.state_dict))
         self.classifier.to(device)
 
         self.featurizer = FEATURIZER
