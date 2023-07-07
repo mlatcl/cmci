@@ -30,15 +30,15 @@ FEATURIZER = torchaudio.transforms.MFCC(sample_rate=SR, n_mfcc=N_MELS).to(device
 softplus = torch.nn.Softplus()
 
 class Files:
-    data_loc = '../data_for_expt/'
-    lb_data_loc = '../data_for_expt/labelled_data/'
+    data_loc = '../data/Calls for ML/'
+
+    # create symlinks so that all the data can be seen from labelled_data
+    lb_data_loc = '../data/Calls for ML/labelled_data/'
+
+    state_dict = '../data/Calls for ML/simple_rnn_sd.pth'
 
     ml_test = 'ML_Test.wav'
-    labels_file = 'Calls_ML_Fix.xlsx'
-
-    hawaii = 'soundscapes/hawaii.wav'
-    cali = 'soundscapes/cali_3.wav'
-    amazon = 'soundscapes/amazon_3.wav'
+    labels_file = 'Calls_ML.xlsx'
 
 def load_audio(file_path):
     sr, audio = load_audio_file(file_path)
@@ -221,37 +221,40 @@ if __name__ == '__main__':
 
     # wandb.init(project="monke")
 
-    losses = []; iterator = trange(2000, leave=False)
-    for i in iterator:
-        optimizer.zero_grad()
+    # losses = []; iterator = trange(2000, leave=False)
+    # for i in iterator:
+    #     optimizer.zero_grad()
 
-        idx = np.random.choice(len(y_train), 500)
+    #     idx = np.random.choice(len(y_train), 500)
 
-        y_prob = classifier(X_train[idx])
-        loss = -torch.distributions.Bernoulli(y_prob).log_prob(y_train[idx]).sum()
+    #     y_prob = classifier(X_train[idx])
+    #     loss = -torch.distributions.Bernoulli(y_prob).log_prob(y_train[idx]).sum()
 
-        if i % 100 == 0:
-            tr_cm = confusion_matrix(y_train[idx].reshape(-1).cpu(), y_prob.round().reshape(-1).detach().cpu(), normalize='all').round(3)*100
-            tr_cm = (tr_cm[0, 0] + tr_cm[1, 1]).round(2)
+    #     if i % 100 == 0:
+    #         tr_cm = confusion_matrix(y_train[idx].reshape(-1).cpu(), y_prob.round().reshape(-1).detach().cpu(), normalize='all').round(3)*100
+    #         tr_cm = (tr_cm[0, 0] + tr_cm[1, 1]).round(2)
 
-            pred = classifier(X_test).detach().cpu().round().reshape(-1)
-            pred[0] = 0; pred[-1] = 1
-            cm = confusion_matrix(y_test, pred, normalize='all').round(3)*100
-            cm = (cm[0, 0] + cm[1, 1]).round(2)
+    #         pred = classifier(X_test).detach().cpu().round().reshape(-1)
+    #         pred[0] = 0; pred[-1] = 1
+    #         cm = confusion_matrix(y_test, pred, normalize='all').round(3)*100
+    #         cm = (cm[0, 0] + cm[1, 1]).round(2)
 
-            pred_2 = classifier(X_test_2)[0].detach().cpu().numpy()
-            cm_2 = confusion_matrix(y_test_2, pred_2.round(), normalize='all').round(3)*100
-            cm_2 = (cm_2[0, 0] + cm_2[1, 1]).round(2)
+    #         pred_2 = classifier(X_test_2)[0].detach().cpu().numpy()
+    #         cm_2 = confusion_matrix(y_test_2, pred_2.round(), normalize='all').round(3)*100
+    #         cm_2 = (cm_2[0, 0] + cm_2[1, 1]).round(2)
 
-        losses.append(loss.item())
-        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm},Te2:{cm_2}')
-        # wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_mlt3=cm_2))
-        loss.backward()
-        optimizer.step()
+    #     losses.append(loss.item())
+    #     iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm},Te2:{cm_2}')
+    #     # wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_mlt3=cm_2))
+    #     loss.backward()
+    #     optimizer.step()
 
-    torch.save(classifier.cpu().state_dict(), 'simple_rnn_sd.pth')
+    # torch.save(classifier.cpu().state_dict(), 'simple_rnn_sd.pth')
+    if os.path.exists(Files.state_dict):
+        classifier.load_state_dict(torch.load(Files.state_dict))
     classifier.to(device)
 
+    pred = classifier(X_test).detach().cpu().round().reshape(-1)
     for zoo in np.unique(z_test):
         _cm = confusion_matrix(y_test[z_test == zoo], pred.round()[z_test == zoo],
                                normalize='all').round(3)*100

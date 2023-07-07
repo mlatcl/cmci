@@ -20,7 +20,7 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.preprocessing import LabelEncoder
 from utils import preprocess_call_labels
 
-DATA_LOC = '../data_for_expt/labelled_data/'
+DATA_LOC = '../data/Calls for ML/Banham_Training/'
 
 def process_file(f, start, end, sr, n_fft_prop=1/3):
     a = read_audio(f + '.wav')[int(start * sr):int(end * sr)]
@@ -29,7 +29,6 @@ def process_file(f, start, end, sr, n_fft_prop=1/3):
         n_fft=int(len(a) * n_fft_prop),
         hop_length=int(len(a) * n_fft_prop/2
     )))
-    print(S.shape)
     mel_features = mfcc(S=S, n_mfcc=20)
     mel_features = (mel_features - mel_features.mean()) / (mel_features.std() + 1e-6)
 
@@ -51,7 +50,7 @@ def read_audio(f):
     return wav.read(os.path.join(DATA_LOC, f))[1].mean(axis=1)
 
 if __name__ == '__main__':
-    CALLS_FILE='Calls_ML_Fix.xlsx'
+    CALLS_FILE='Calls_ML.xlsx'
     AUDIO_FILE='ML_Test.wav'
 
     calls = pd.read_excel(os.path.join(DATA_LOC, CALLS_FILE))
@@ -60,8 +59,8 @@ if __name__ == '__main__':
     calls = calls.loc[calls.call_type != 'interference'].reset_index(drop=True)
 
     # Reclassify call clusters
-    # calls.loc[calls.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'
-    # calls.loc[calls.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
+    calls.loc[calls.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'
+    calls.loc[calls.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
 
     sr, _ = wav.read(os.path.join(DATA_LOC, AUDIO_FILE))
 
@@ -88,7 +87,7 @@ if __name__ == '__main__':
         accs[seed] = (classifier.predict(Z_test) == y_test).mean()
     accs *= 100
     print(f'Accuracy:{accs.mean().round(2)}%±{2*accs.std().round(1)}%')
-    # 84.1% ± 2.8% grouped
+    # 85.5% ± 4.8% grouped
 
     ConfusionMatrixDisplay(
         confusion_matrix(
@@ -104,32 +103,3 @@ if __name__ == '__main__':
 
     plot_df = pd.DataFrame(dict(latent_a=Z[:, 0], latent_b=Z[:, 1], call_type=plot_y))
     sns.scatterplot(data=plot_df, x='latent_a', y='latent_b', hue='call_type', palette='Paired')
-
-    # -------------------------------------------------------------
-    # this generates the plot that connnects a saved segment to the classifier
-
-    dim_reducer = UMAP(random_state=42).fit(X)
-    Z = dim_reducer.transform(X)
-
-    plot_df = pd.DataFrame(dict(latent_a=Z[:, 0], latent_b=Z[:, 1], call_type=y))
-    sns.scatterplot(data=plot_df, x='latent_a', y='latent_b', hue='call_type', palette='Paired')
-
-
-    # Load segment file generated from CallFinder
-    with open(DATA_LOC + 'segments_ML_Test.json', 'rb') as file:
-        segments = json.load(file)
-
-    X_unlab = np.vstack([
-        process('ML_Test', start, end, sr=sr)
-        for (start, end) in segments['data/ML_Test.wav']['segments']
-    ])
-    X_unlab = (X_unlab - X_unlab.mean(axis=0)) / (X_unlab.std(axis=0) + 1e-12)
-
-    Z_unlab = dim_reducer.transform(X_unlab)
-
-    plot_df = pd.DataFrame(dict(
-        latent_a=np.hstack([Z[:, 0], Z_unlab[:, 0]]),
-        latent_b=np.hstack([Z[:, 1], Z_unlab[:, 1]]),
-        call_type=np.hstack([y, ['unlabelled']*len(X_unlab)])
-    ))
-    sns.scatterplot(data=plot_df, x='latent_a', y='latent_b', hue='call_type', palette='Paired', alpha=0.5)
