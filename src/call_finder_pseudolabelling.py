@@ -2,10 +2,13 @@
 import os, torch
 import numpy as np
 from tqdm import trange
-from call_finder_rnn_simple import load_audio, FEATURIZER, Files, N_MELS, Classifier, device
+from call_finder_rnn_simple import \
+    load_audio, FEATURIZER, Files, N_MELS, Classifier, device, \
+    CallFinder as CallFinderRNN
 
 class Files_SL(Files):
     unlb_data_loc = Files.lb_data_loc.replace('labelled', 'unlabelled')
+    state_dict = '../data/Calls for ML/smol_sl_sd.pth'
 
 class SSLData(torch.utils.data.Dataset):
     def __init__(self):
@@ -29,6 +32,13 @@ class SSLData(torch.utils.data.Dataset):
                         feature[sample_idx:(sample_idx + segm_len), :][None, ...]
                     )
         return torch.cat(sampled_features, axis=0)
+
+class CallFinder(CallFinderRNN):
+    def __init__(self):
+        super().__init__()
+        self.classifier = Classifier(N_MELS, num_lstm=6)
+        self.classifier.load_state_dict(torch.load(Files_SL.state_dict))
+        self.classifier.to(device)
 
 if __name__ == '__main__':
 
@@ -65,6 +75,9 @@ if __name__ == '__main__':
         iterator.set_description(f'L:{np.round(loss.item(), 2)}')
         loss.backward()
         optimizer.step()
+
+    torch.save(model_v2.cpu().state_dict(), Files_SL.state_dict)
+    model_v2.to(device)
 
     X_orig = FEATURIZER(
         load_audio(Files.lb_data_loc + 'Blackpool_Combined_FINAL.wav').to(device)
