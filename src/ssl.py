@@ -47,7 +47,7 @@ if __name__ == '__main__':
 
     data_iterator = iter(dataloader); losses = []
 
-    for i in (iterator := trange(2000, leave=False)):
+    for i in (iterator := trange(1800, leave=False)):
         optimizer.zero_grad()
 
         X = next(data_iterator)
