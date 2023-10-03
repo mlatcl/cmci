@@ -4,14 +4,15 @@ import numpy as np
 from tqdm import trange
 from call_finder_rnn_simple import load_audio, FEATURIZER, Files, N_MELS, Classifier, device
 
-Files.unlb_data_loc = Files.lb_data_loc.replace('labelled', 'unlabelled')
+class Files_SL(Files):
+    unlb_data_loc = Files.lb_data_loc.replace('labelled', 'unlabelled')
 
 class SSLData(torch.utils.data.Dataset):
     def __init__(self):
-        self.audio_files = os.listdir(Files.unlb_data_loc)
+        self.audio_files = os.listdir(Files_SL.unlb_data_loc)
         self.features = []
         for file in self.audio_files:
-            audio = load_audio(os.path.join(Files.unlb_data_loc, file)).to(device)
+            audio = load_audio(os.path.join(Files_SL.unlb_data_loc, file)).to(device)
             self.features.append(FEATURIZER(audio).T)
 
     def __len__(self):

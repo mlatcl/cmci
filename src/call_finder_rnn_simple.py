@@ -56,7 +56,7 @@ def simple_classifier(file_path, **kwargs):
     )
 
     call_finder = CallFinderBasic()
-    return call_finder.find_calls(S, f, t, **kwargs)[0]
+    return call_finder.find_calls(S, f, t, **kwargs)
 
 def get_confusion_matrix(segments_true, segments_pred):
     t_start, t_end, t_step = 0, max(np.max(segments_true), np.max(segments_pred)), 0.05
@@ -187,7 +187,7 @@ class CallFinder(CallFinderBasic):
         segments = self.clean_labels(t, start_end_indices)
         
         segments = segments[np.diff(segments, axis=1)[:, 0] > mininum_call_duration, :] # filter out short duration calls
-        return segments, final_feature
+        return segments
 
 if __name__ == '__main__':
 
@@ -280,5 +280,5 @@ if __name__ == '__main__':
 
     rnn_blackpool_cm = get_confusion_matrix(
         np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
-        CallFinder().find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])[0]
+        CallFinder().find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])
     )

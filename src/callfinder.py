@@ -78,4 +78,4 @@ class CallFinder:
         segments = self.clean_labels(t, start_end_indices)
         
         segments = segments[np.diff(segments, axis=1)[:, 0] > mininum_call_duration, :] # filter out short duration calls
-        return segments, thresholded_spectrum, feature, final_feature
+        return segments
