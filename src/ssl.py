@@ -2,7 +2,7 @@
 import os, torch
 import numpy as np
 from tqdm import trange
-from call_finder_rnn_simple import load_audio, FEATURIZER, Files, N_MELS, Classifier
+from call_finder_rnn_simple import load_audio, FEATURIZER, Files, N_MELS, Classifier, device
 
 Files.unlb_data_loc = Files.lb_data_loc.replace('labelled', 'unlabelled')
 
@@ -11,13 +11,13 @@ class SSLData(torch.utils.data.Dataset):
         self.audio_files = os.listdir(Files.unlb_data_loc)
         self.features = []
         for file in self.audio_files:
-            audio = load_audio(os.path.join(Files.unlb_data_loc, file))
+            audio = load_audio(os.path.join(Files.unlb_data_loc, file)).to(device)
             self.features.append(FEATURIZER(audio).T)
 
     def __len__(self):
         return np.inf
 
-    def __getitem__(self, index, segm_len=200, num_sample_per_file=3):
+    def __getitem__(self, index, segm_len=200, num_sample_per_file=100):
         sampled_features = []
         for feature in self.features:
             idx_max = feature.shape[0] - segm_len
@@ -32,20 +32,22 @@ class SSLData(torch.utils.data.Dataset):
 if __name__ == '__main__':
 
     import matplotlib.pyplot as plt
-    plt.ion(); plt.style.use('seaborn-pastel')
+    plt.ion(); plt.style.use('seaborn-v0_8-pastel')
+
+    np.random.seed(42); torch.manual_seed(42)
 
     model_v1 = Classifier(N_MELS)
     model_v1.load_state_dict(torch.load(Files.state_dict))
+    model_v1.to(device)
 
     dataloader = SSLData()
 
-    model_v2 = Classifier(N_MELS, num_lstm=6)
+    model_v2 = Classifier(N_MELS, num_lstm=6).to(device)
     optimizer = torch.optim.Adam(model_v2.parameters(), lr=0.005)
 
-    data_iterator = iter(dataloader)
+    data_iterator = iter(dataloader); losses = []
 
-    losses = []; iterator = trange(2000, leave=False)
-    for i in iterator:
+    for i in (iterator := trange(2000, leave=False)):
         optimizer.zero_grad()
 
         X = next(data_iterator)
@@ -64,10 +66,10 @@ if __name__ == '__main__':
         optimizer.step()
 
     X_orig = FEATURIZER(
-        load_audio(Files.lb_data_loc + 'Blackpool_Combined_FINAL.wav')
+        load_audio(Files.lb_data_loc + 'Blackpool_Combined_FINAL.wav').to(device)
     ).T[None, :1000, :]
 
-    plt.plot(model_v1(X_orig)[0].detach(), label='v1')
-    plt.plot(model_v2(X_orig)[0].detach(), label='v2')
+    plt.plot(model_v1(X_orig)[0].detach().cpu(), label='v1')
+    plt.plot(model_v2(X_orig)[0].detach().cpu(), label='v2')
     plt.legend()
     plt.tight_layout()

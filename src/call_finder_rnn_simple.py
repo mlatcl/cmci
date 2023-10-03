@@ -10,7 +10,7 @@ np.random.seed(42); torch.manual_seed(42)
 
 import seaborn as sns
 import matplotlib.pyplot as plt
-plt.ion(); plt.style.use('seaborn-pastel')
+plt.ion(); plt.style.use('seaborn-v0_8-pastel')
 
 from librosa.feature import mfcc
 from utils import preprocess_call_labels
