@@ -37,6 +37,7 @@ class Files:
     lb_data_loc = '../data/Calls for ML/labelled_data/'
 
     state_dict = '../data/Calls for ML/simple_rnn_sd.pth'
+    train_data = '../data/Calls for ML/training_data.pth'
 
     ml_test = 'ML_Test.wav'
     labels_file = 'Calls_ML.xlsx'
@@ -205,13 +206,16 @@ if __name__ == '__main__':
 
     X_test = X_full[test_idx, ...]
     y_test = y_full[test_idx, ...].cpu().numpy().reshape(-1)
-    z_test = z_full[test_idx, ...].reshape(-1)
+    z_test = z_full[test_idx, ...].copy().reshape(-1)
 
     conv = {'Blackpool_Combined_FINAL': 'blackpool', 'Shaldon_Combined': 'shaldon',
             'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham'}
 
     for k, repl in conv.items():
         z_test[z_test == k] = repl
+        z_full[z_full == k] = repl
+
+    torch.save((X_full, y_full, z_full), Files.train_data)
 
     X_test_2 = data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...]
     y_test_2 = data_loader.label_ts['ML_Test_3'].cpu().numpy()
