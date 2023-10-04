@@ -5,6 +5,8 @@ from tqdm import trange
 from call_finder_rnn_simple import \
     load_audio, FEATURIZER, Files, N_MELS, Classifier, device, \
     CallFinder as CallFinderRNN
+from sklearn.metrics import confusion_matrix
+# import wandb
 
 class Files_SL(Files):
     unlb_data_loc = Files.lb_data_loc.replace('labelled', 'unlabelled')
@@ -50,20 +52,34 @@ if __name__ == '__main__':
     model_v1 = Classifier(N_MELS)
     model_v1.load_state_dict(torch.load(Files.state_dict))
     model_v1.to(device)
+    model_v1.eval()
 
     dataloader = SSLData()
 
     model_v2 = Classifier(N_MELS, num_lstm=6).to(device)
+
+    X_labl, y_labl, z_labl = torch.load(Files.train_data)
+
+    idx = np.random.choice(len(y_labl), len(y_labl), replace=False)
+    train_idx, test_idx = idx[:int(0.9*len(idx))], idx[int(0.9*len(idx)):]
+
+    X_train = X_labl[train_idx, ...].to(device)
+    y_train = y_labl[train_idx, ...].to(device)
+
+    X_test = X_labl[test_idx, ...].to(device)
+    y_test = y_labl[test_idx, ...].cpu().numpy().reshape(-1)
+
     optimizer = torch.optim.Adam(model_v2.parameters(), lr=0.005)
 
     data_iterator = iter(dataloader); losses = []
-
-    for i in (iterator := trange(1800, leave=False)):
+    # wandb.init(project="monke")
+    for i in (iterator := trange(1000, leave=False)):
         optimizer.zero_grad()
 
         X = next(data_iterator)
 
-        y_true = model_v1(X)
+        with torch.no_grad():
+            y_true = model_v1(X)
         y_pred = model_v2(X)
 
         loss = torch.distributions.kl_divergence(
@@ -71,8 +87,19 @@ if __name__ == '__main__':
             torch.distributions.Bernoulli(y_true)
         ).sum()
 
+        idx = np.random.choice(len(y_train), len(X))
+        y_pred_on_train = model_v2(X_train[idx])
+        loss -= torch.distributions.Bernoulli(y_pred_on_train).log_prob(y_train[idx]).sum()
+
+        test_cm = confusion_matrix(y_test,
+            model_v2(X_test).cpu().detach().numpy().reshape(-1).round(),
+        normalize='all')
+
         losses.append(loss.item())
-        iterator.set_description(f'L:{np.round(loss.item(), 2)}')
+
+        test_metric = test_cm[0, 0] + test_cm[1, 1]
+        iterator.set_description(f'L:{np.round(loss.item(), 2)}|Tr:{np.round(test_metric, 2)}')
+        # wandb.log(dict(l=loss.item(), te=test_metric))
         loss.backward()
         optimizer.step()
 
