@@ -9,3 +9,4 @@ tmp/*
 *.npy
 *.xlsx
 *:Zone.Identifier
+venv

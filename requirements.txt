@@ -5,6 +5,7 @@ matplotlib
 tqdm
 torch
 torchvision
+torchaudio
 librosa
 plotly
 pandas
