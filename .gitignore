@@ -7,6 +7,6 @@ tmp/*
 *.pth
 *ipynb_checkpoints*
 *.npy
-*.xlsx
+# *.xlsx
 *:Zone.Identifier
 venv
