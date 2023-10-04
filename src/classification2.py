@@ -45,23 +45,11 @@ class AudioDataset(torch.utils.data.Dataset):
         }
         self.audio_lens = {k: (len(a), len(a)/SR) for k, a in self.audio.items()}
 
-        calls = pd.read_excel(os.path.join(Files.lb_data_loc, Files.labels_file))
-        calls = calls.loc[(calls.Call_Type != 'interference'), ['File', 'Call_Type', 'Start', 'End']]
-        calls = calls.loc[~calls.Call_Type.isna(), ['File', 'Call_Type', 'Start', 'End']]
-        # calls['File'] = 'Calls_ML'
-        calls.columns = calls.columns.str.lower()
+        calls_banham = self.get_calls(os.path.join(Files.lb_data_loc, Files.labels_file))
+        calls_blackpool = self.get_calls(os.path.join(Files.lb_data_loc, 'Blackpool_Labels.xlsx'), name='Blackpool_Combined_FINAL')
+        calls_shaldon = self.get_calls(os.path.join(Files.lb_data_loc, 'Shaldon_Training_Labels.xlsx'), name='Shaldon_Combined')
 
-        calls_shaldon = pd.read_excel(os.path.join(Files.lb_data_loc, 'Shaldon_Training_Labels.xlsx'))
-        calls_shaldon = calls_shaldon.loc[~calls_shaldon.Call_Type.isna(), ['File', 'Call_Type', 'Start', 'End']]
-        calls_shaldon['File'] = 'Shaldon_Combined'
-        calls_shaldon.columns = calls_shaldon.columns.str.lower()
-
-        calls_blackpool = pd.read_excel(os.path.join(Files.lb_data_loc, 'Blackpool_Labels.xlsx'))
-        calls_blackpool = calls_blackpool.loc[~calls_blackpool.Call_Type.isna(), ['File', 'Call_Type', 'Start', 'End']]
-        calls_blackpool['File'] = 'Blackpool_Combined_FINAL'
-        calls_blackpool.columns = calls_blackpool.columns.str.lower()
-
-        labels = pd.concat([calls, calls_shaldon, calls_blackpool], axis=0).reset_index(drop=True)
+        labels = pd.concat([calls_banham, calls_shaldon, calls_blackpool], axis=0).reset_index(drop=True)
 
         labels.loc[labels.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'
         labels.loc[labels.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
@@ -79,6 +67,14 @@ class AudioDataset(torch.utils.data.Dataset):
         self.le.fit(self.y)
         self.y_transformed = self.le.transform(self.y)
 
+    def get_calls(self, path, name=None):
+        calls = pd.read_excel(path)
+        calls = calls.loc[(calls.Call_Type != 'interference'), ['File', 'Call_Type', 'Start', 'End']]
+        calls = calls.loc[~calls.Call_Type.isna(), ['File', 'Call_Type', 'Start', 'End']]
+        if name:
+            calls['File'] = name
+        calls.columns = calls.columns.str.lower()
+        return calls
 
     def __len__(self):
         return len(self.X)
