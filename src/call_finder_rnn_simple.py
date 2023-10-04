@@ -18,6 +18,7 @@ from callfinder import CallFinder as CallFinderBasic
 from audio.audio_processing import get_spectrum, load_audio_file
 from sklearn.metrics import confusion_matrix
 from callfinder import CallFinder as CallFinderBasic
+from functools import lru_cache
 
 from loguru import logger; l = logger.debug
 import wandb
@@ -40,6 +41,7 @@ class Files:
     ml_test = 'ML_Test.wav'
     labels_file = 'Calls_ML.xlsx'
 
+@lru_cache(maxsize=20)
 def load_audio(file_path):
     sr, audio = load_audio_file(file_path)
     audio = torchaudio.functional.resample(torch.tensor(audio), sr, SR)
@@ -175,7 +177,7 @@ class CallFinder(CallFinderBasic):
 
         self.featurizer = FEATURIZER
 
-    def find_calls_rnn(self, audio, threshold=0.5, mininum_call_duration=0.05):
+    def find_calls_rnn(self, audio, threshold=0.5, mininum_call_duration=0.05, start_time=0.0):
         feats = self.featurizer(torch.tensor(audio).to(device)).T
         max_t = len(audio)/SR
         t = max_t * np.arange(len(feats)) / len(feats)
@@ -187,6 +189,7 @@ class CallFinder(CallFinderBasic):
         segments = self.clean_labels(t, start_end_indices)
         
         segments = segments[np.diff(segments, axis=1)[:, 0] > mininum_call_duration, :] # filter out short duration calls
+        segments += start_time
         return segments
 
 if __name__ == '__main__':
