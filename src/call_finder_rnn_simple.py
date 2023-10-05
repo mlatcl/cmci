@@ -39,6 +39,8 @@ class Files:
     state_dict = '../data/Calls for ML/simple_rnn_sd.pth'
     train_data = '../data/Calls for ML/training_data.pth'
     classifier_state = '../data/Calls for ML/class_nn_sd.pth'
+    classifier_labels = '../data/Calls for ML/class_labels.npy'
+    classification_data = '../data/Calls for ML/class_data.pth'
 
     ml_test = 'ML_Test.wav'
     labels_file = 'Calls_ML.xlsx'

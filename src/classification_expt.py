@@ -12,13 +12,11 @@ from scipy.io import wavfile as wav
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.preprocessing import LabelEncoder
+from call_finder_rnn_simple import AudioDataset, Files, device
 
 softmax = torch.nn.Softmax(dim=1)
 
-def process_file(f, start, end, n_fft_prop=1/3):
-    sr, a = read_audio(f + '.wav')
-    a = a[int(start * sr):int(end * sr)]
-
+def feature(a, n_fft_prop=1/3):
     S = np.abs(stft(a,
         n_fft=int(len(a) * n_fft_prop),
         hop_length=int(len(a) * n_fft_prop/2
@@ -28,9 +26,14 @@ def process_file(f, start, end, n_fft_prop=1/3):
     mel_features = (mel_features - mel_features.mean()) / (mel_features.std() + 1e-6)
     return mel_features.reshape(-1)
 
+def process_file(f, start, end, data_loc=Files.lb_data_loc):
+    sr, a = read_audio(f, data_loc=data_loc)
+    a = a[int(start * sr):int(end * sr)]
+    return feature(a)
+
 @lru_cache(maxsize=50)
-def read_audio(f):
-    sr, audio = wav.read(os.path.join(DATA_LOC, f))
+def read_audio(f, data_loc=Files.lb_data_loc):
+    sr, audio = wav.read(os.path.join(data_loc, f))
     if len(audio.shape) == 2:
         return sr, audio.mean(axis=1)
     else:
@@ -49,10 +52,35 @@ class Classifier(torch.nn.Module):
         x = self.nnet(x)
         return softmax(x)
 
-if __name__ == '__main__':
+class ClassifierPipeline:
+    def __init__(self):
+        state_dict = torch.load(Files.classifier_state)
+        num_classes, input_size = state_dict['nnet.0.weight'].shape
 
-    from call_finder_rnn_simple import AudioDataset, Files, device
-    DATA_LOC = Files.lb_data_loc
+        self.classifier = Classifier(input_size, num_classes)
+        self.classifier.load_state_dict(state_dict)
+        self.classifier.to(device)
+
+        self.le = LabelEncoder()
+        self.le.classes_ = np.load(Files.classifier_labels)
+
+    def _predict_one(self, f, start, stop, data_loc=Files.lb_data_loc):
+        X = torch.tensor(
+            process_file(f, start, end, data_loc=data_loc)
+        ).to(device).float()[None, ...]
+
+        y = self.le.inverse_transform(
+            self.classifier(X).argmax(dim=1).cpu().detach().numpy()
+        )
+        return y
+
+    def predict(self, f, starts, stops, data_loc=Files.lb_data_loc):
+        return np.hstack([ \
+            self._predict_one(f, starts[i], stops[i], data_loc=data_loc) \
+            for i in range(len(starts)) \
+        ])
+
+if __name__ == '__main__':
 
     data_loader = AudioDataset(device=device)
     calls = data_loader.labels.copy()
@@ -64,8 +92,10 @@ if __name__ == '__main__':
     calls.loc[calls.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'
     calls.loc[calls.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
 
+    calls['file_with_ext'] = calls['file'] + '.wav'
+
     X = np.vstack([
-        process_file(*calls.loc[i, ['file', 'start', 'end']])
+        process_file(*calls.loc[i, ['file_with_ext', 'start', 'end']])
         for i in calls.index
     ])
     X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-12)
@@ -74,6 +104,9 @@ if __name__ == '__main__':
     le = LabelEncoder()
     le.fit(y)
     y_transformed = le.transform(y)
+
+    np.save(Files.classifier_labels, le.classes_)
+    torch.save((X, y_transformed), Files.classification_data)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y_transformed, test_size=0.2, random_state=42)
 
