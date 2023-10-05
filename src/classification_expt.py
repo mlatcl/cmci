@@ -39,7 +39,11 @@ def read_audio(f):
 class Classifier(torch.nn.Module):
     def __init__(self, input_size, num_classes):
         super().__init__()
-        self.nnet = torch.nn.Linear(input_size, num_classes)
+        self.nnet = torch.nn.Sequential(
+            torch.nn.Linear(input_size, num_classes),
+            torch.nn.Softplus(),
+            torch.nn.Linear(num_classes, num_classes),
+        )
 
     def forward(self, x):
         x = self.nnet(x)
@@ -50,15 +54,15 @@ if __name__ == '__main__':
     from call_finder_rnn_simple import AudioDataset, Files, device
     DATA_LOC = Files.lb_data_loc
 
-    data_loader = AudioDataset(device='cpu')
+    data_loader = AudioDataset(device=device)
     calls = data_loader.labels.copy()
 
     calls = calls.loc[calls.end > calls.start].reset_index(drop=True)
     calls.loc[calls.call_type == 'Resonating Note', 'call_type'] = 'Resonate'
 
     # Reclassify call clusters
-    # calls.loc[calls.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'
-    # calls.loc[calls.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
+    calls.loc[calls.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'
+    calls.loc[calls.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
 
     X = np.vstack([
         process_file(*calls.loc[i, ['file', 'start', 'end']])
@@ -77,38 +81,50 @@ if __name__ == '__main__':
     y_train = torch.tensor(y_train).float().to(device)
     X_test = torch.tensor(X_test).float().to(device)
 
-    classifier = Classifier(X.shape[1], len(le.classes_))
+    classifier = Classifier(X.shape[1], len(le.classes_)).to(device)
 
     optimizer = torch.optim.Adam([
-        dict(params=classifier.parameters(), lr=0.01),
+        dict(params=classifier.parameters(), lr=0.0001),
     ])
 
-    wandb.init(project="monke")
+    # wandb.init(project="monke")
 
-    losses = []; iterator = trange(10000, leave=False)
+    losses = []; iterator = trange(20000, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
-        y_prob = classifier(X_train)
-        loss = -torch.distributions.Categorical(y_prob).log_prob(y_train).sum()
+        idx = np.random.choice(len(X_train), 50)
 
-        tr_cm = confusion_matrix(y_train.cpu(), y_prob.argmax(dim=1).detach().cpu(), normalize='all')*100
+        y_prob = classifier(X_train[idx])
+        loss = -torch.distributions.Categorical(y_prob).log_prob(y_train[idx]).sum()
+
+        tr_cm = confusion_matrix(y_train[idx].cpu(), y_prob.argmax(dim=1).detach().cpu(), normalize='all')*100
         tr_cm = tr_cm[range(len(tr_cm)), range(len(tr_cm))].sum().round(2)
 
         te_cm = confusion_matrix(y_test, classifier(X_test).argmax(dim=1).detach().cpu(), normalize='all')*100
         te_cm = te_cm[range(len(te_cm)), range(len(te_cm))].sum().round(2)
 
         losses.append(loss.item())
-        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm}%,Te:{tr_cm}%')
-        wandb.log(dict(class_l=loss.item(), class_tr=tr_cm, class_te=te_cm))
+        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm}%,Te:{te_cm}%')
+        # wandb.log(dict(class_l=loss.item(), class_tr=tr_cm, class_te=te_cm))
         loss.backward()
         optimizer.step()
 
-    ConfusionMatrixDisplay(
-        confusion_matrix(
-            le.inverse_transform(y_test),
-            le.inverse_transform(classifier(X_test).argmax(dim=1).detach().cpu()),
-            normalize='true'
-        ).round(2),
-        display_labels=le.classes_.copy()
-    ).plot()
+    torch.save(classifier.cpu().state_dict(), Files.classifier_state)
+
+    if os.path.exists(Files.classifier_state):
+        classifier.load_state_dict(torch.load(Files.classifier_state))
+    classifier.to(device)
+
+    # le_classes = le.classes_.copy()
+    # if len(le.classes_) not in np.unique(y_test):
+    #     le_classes = le_classes[le_classes != "Sneeze"]  # prone to breaking, fix as this doesn't depend on where sneezes occur in the class vector
+
+    # ConfusionMatrixDisplay(
+    #     confusion_matrix(
+    #         le.inverse_transform(y_test),
+    #         le.inverse_transform(classifier(X_test).argmax(dim=1).detach().cpu()),
+    #         normalize='true'
+    #     ).round(2),
+    #     display_labels=le_classes
+    # ).plot()
