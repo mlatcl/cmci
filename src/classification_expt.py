@@ -66,7 +66,7 @@ class ClassifierPipeline:
 
     def _predict_one(self, f, start, stop, data_loc=Files.lb_data_loc):
         X = torch.tensor(
-            process_file(f, start, end, data_loc=data_loc)
+            process_file(f, start, stop, data_loc=data_loc)
         ).to(device).float()[None, ...]
 
         y = self.le.inverse_transform(

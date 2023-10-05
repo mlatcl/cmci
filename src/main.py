@@ -18,12 +18,14 @@ from call_finder_rnn_simple import load_audio as load_torch_audio, CallFinder as
 from call_finder_pseudolabelling import CallFinder as CF_SMOL_SL
 
 from audio.audio_processing import get_spectrum, load_audio_file
+from classification_expt import ClassifierPipeline
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.YETI])
 
 cf_v0 = CFv0()
 cv_rnn_sup = CF_RNN_SUP()
 cv_smol_sl = CF_SMOL_SL()
+classifier_pipeline = ClassifierPipeline()
 
 def define_slidemarks(sampling_rate, audio_len):
     max_time = int(audio_len/sampling_rate)
@@ -85,7 +87,7 @@ def update_initial_exposed(start_time, audio_file_name, model_name):
     segment_length = 10 # seconds
 
     if audio_file_name is None:
-        audio_file_name = '../data/Calls for ML/unlabelled_data/Blackpool_Combined_FINAL.wav'
+        audio_file_name = '../data/Calls for ML/labelled_data/Blackpool_Combined_FINAL.wav'
 
     sampling_rate, audio = load_audio_file(audio_file_name)
 
@@ -114,10 +116,21 @@ def update_initial_exposed(start_time, audio_file_name, model_name):
     else:
         raise ValueError('unknown model')
 
-    for segment in segments:
+    if len(segments) > 0:
+        classes = classifier_pipeline.predict(audio_file_name, segments[:, 0], segments[:, 1], data_loc='')
+    else:
+        classes = np.array([])
+
+    for segment, class_label in zip(segments, classes):
         x0, x1 = segment
         if start_time < x0 and start_time + segment_length > x1:
             spectrum_fig.add_shape(x0=x0, x1=x1, y0=f[0], y1=f[-1], opacity=0.25, fillcolor="Orange")
+            spectrum_fig.add_annotation(
+                x=(x0 + x1) / 2,  # x-coordinate for the center of the shape
+                y=(f[0] + f[-1]) / 6,  # y-coordinate for the center of the shape
+                text=class_label,  # The label text
+                showarrow=False,  # We don't want an arrow for the label
+            )
 
     return spectrum_fig, slidemarks, t_max
 
