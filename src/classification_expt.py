@@ -1,7 +1,8 @@
 
 import os, torch, wandb
 import numpy as np
-from tqdm import trange
+import pandas as pd
+from tqdm import tqdm, trange
 from functools import lru_cache
 import matplotlib.pyplot as plt; plt.ion()
 
@@ -43,9 +44,11 @@ class Classifier(torch.nn.Module):
     def __init__(self, input_size, num_classes):
         super().__init__()
         self.nnet = torch.nn.Sequential(
-            torch.nn.Linear(input_size, num_classes),
+            torch.nn.Linear(input_size, num_classes*3),
             torch.nn.Softplus(),
-            torch.nn.Linear(num_classes, num_classes),
+            torch.nn.Linear(num_classes*3, num_classes*3),
+            torch.nn.Softplus(),
+            torch.nn.Linear(num_classes*3, num_classes),
         )
 
     def forward(self, x):
@@ -56,6 +59,7 @@ class ClassifierPipeline:
     def __init__(self):
         state_dict = torch.load(Files.classifier_state)
         num_classes, input_size = state_dict['nnet.0.weight'].shape
+        num_classes = int(num_classes/3)
 
         self.classifier = Classifier(input_size, num_classes)
         self.classifier.load_state_dict(state_dict)
@@ -94,9 +98,30 @@ if __name__ == '__main__':
 
     calls['file_with_ext'] = calls['file'] + '.wav'
 
+    calls_first_half = calls.copy()
+    calls_first_half['end'] = (calls_first_half['end'] - calls_first_half['start'])/2 + calls_first_half['start']
+
+    calls_sec_half = calls.copy()
+    calls_sec_half['start'] = calls_sec_half['end'] - (calls_sec_half['end'] - calls_sec_half['start'])/2
+
+    shift = 0.2
+
+    calls_shifted = calls.copy()
+    calls_shifted['start'] += np.random.uniform(-shift, shift, len(calls))
+    calls_shifted['end'] += np.random.uniform(-shift, shift, len(calls))
+    calls_shifted = calls_shifted.loc[(calls_shifted.end > calls_shifted.start) & (calls_shifted.start > 0)]
+
+    calls = pd.concat([calls, calls_first_half, calls_sec_half, calls_shifted], axis=0).reset_index(drop=True)
+
+    X = [process_file(*calls.loc[i, ['file_with_ext', 'start', 'end']]) \
+         for i in tqdm(calls.index)]
+
+    calls['drop'] = [(len(x) != 140) for x in X]
+    calls = calls.loc[~calls['drop']].reset_index(drop=True)
+
     X = np.vstack([
-        process_file(*calls.loc[i, ['file_with_ext', 'start', 'end']])
-        for i in calls.index
+        process_file(*calls.loc[i, ['file_with_ext', 'start', 'end']]) \
+        for i in tqdm(calls.index)
     ])
     X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-12)
 
@@ -117,16 +142,16 @@ if __name__ == '__main__':
     classifier = Classifier(X.shape[1], len(le.classes_)).to(device)
 
     optimizer = torch.optim.Adam([
-        dict(params=classifier.parameters(), lr=0.0001),
+        dict(params=classifier.parameters(), lr=0.005),
     ])
 
     # wandb.init(project="monke")
 
-    losses = []; iterator = trange(20000, leave=False)
+    losses = []; iterator = trange(1500, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
-        idx = np.random.choice(len(X_train), 50)
+        idx = np.random.choice(len(X_train), 500)
 
         y_prob = classifier(X_train[idx])
         loss = -torch.distributions.Categorical(y_prob).log_prob(y_train[idx]).sum()
@@ -159,5 +184,5 @@ if __name__ == '__main__':
     #         le.inverse_transform(classifier(X_test).argmax(dim=1).detach().cpu()),
     #         normalize='true'
     #     ).round(2),
-    #     display_labels=le_classes
+    #     display_labels=le.classes_.copy()
     # ).plot()
