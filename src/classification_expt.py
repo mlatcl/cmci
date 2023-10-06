@@ -44,16 +44,42 @@ class Classifier(torch.nn.Module):
     def __init__(self, input_size, num_classes):
         super().__init__()
         self.nnet = torch.nn.Sequential(
-            torch.nn.Linear(input_size, num_classes*3),
+            torch.nn.Linear(input_size, 100),
             torch.nn.Softplus(),
-            torch.nn.Linear(num_classes*3, num_classes*3),
+            torch.nn.Linear(100, 100),
             torch.nn.Softplus(),
-            torch.nn.Linear(num_classes*3, num_classes),
+            torch.nn.Linear(100, num_classes),
         )
 
     def forward(self, x):
         x = self.nnet(x)
         return softmax(x)
+
+# class Classifier(torch.nn.Module):
+#     def __init__(self, num_classes):
+#         super().__init__()
+
+#         self.features = torch.nn.Sequential(
+#             torch.nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(),
+#             torch.nn.MaxPool2d(kernel_size=2, stride=2),
+#             torch.nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(),
+#             torch.nn.MaxPool2d(kernel_size=2, stride=2)
+#         )
+
+#         self.classifier = torch.nn.Sequential(
+#             torch.nn.Linear(5 * 1 * 32, 32),
+#             torch.nn.ReLU(),
+#             torch.nn.Linear(32, num_classes)
+#         )
+
+#     def forward(self, x):
+#         x = x.reshape(-1, 1, 20, 7)
+#         x = self.features(x)
+#         x = x.view(x.size(0), -1)
+#         x = self.classifier(x)
+#         return torch.nn.functional.softmax(x, dim=-1)
 
 class ClassifierPipeline:
     def __init__(self):
@@ -97,6 +123,7 @@ if __name__ == '__main__':
     calls.loc[calls.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
 
     calls['file_with_ext'] = calls['file'] + '.wav'
+    calls['orig'] = False
 
     calls_first_half = calls.copy()
     calls_first_half['end'] = (calls_first_half['end'] - calls_first_half['start'])/2 + calls_first_half['start']
@@ -111,12 +138,40 @@ if __name__ == '__main__':
     calls_shifted['end'] += np.random.uniform(-shift, shift, len(calls))
     calls_shifted = calls_shifted.loc[(calls_shifted.end > calls_shifted.start) & (calls_shifted.start > 0)]
 
-    calls = pd.concat([calls, calls_first_half, calls_sec_half, calls_shifted], axis=0).reset_index(drop=True)
+    if not os.path.exists('../data/Calls for ML/labelled_data/blackpool_hi.wav'):
+        print('making fake hawaii data')
+        from scipy.io import wavfile as wav
+        import librosa
+
+        monkeys, sr = librosa.load('../data/Calls for ML/labelled_data/Blackpool_Combined_FINAL.wav', sr=44100)
+        soundscape, sr = librosa.load('../data/Calls for ML/unlabelled_data/hawaii.wav', sr=sr)
+
+        monkeys = monkeys*0.25 + 0.75*soundscape[:len(monkeys)]
+        wav.write('../data/Calls for ML/labelled_data/blackpool_hi.wav', 44100, monkeys)
+
+        monkeys, sr = librosa.load('../data/Calls for ML/labelled_data/Shaldon_Combined.wav', sr=44100)
+        soundscape, sr = librosa.load('../data/Calls for ML/unlabelled_data/hawaii.wav', sr=sr)
+
+        monkeys = monkeys*0.25 + 0.75*soundscape[:len(monkeys)]
+        wav.write('../data/Calls for ML/labelled_data/shaldon_hi.wav', 44100, monkeys)
+
+    fake_hawaii = calls.copy()
+    fake_hawaii = fake_hawaii.loc[fake_hawaii.file.isin(['Blackpool_Combined_FINAL', 'Shaldon_Combined'])].reset_index(drop=True)
+    fake_hawaii.loc[fake_hawaii.file == 'Shaldon_Combined', 'file'] = 'shaldon_hi'
+    fake_hawaii.loc[fake_hawaii.file == 'Blackpool_Combined_FINAL', 'file'] = 'blackpool_hi'
+    fake_hawaii.loc[fake_hawaii.file == 'Shaldon_Combined', 'file_with_ext'] = 'shaldon_hi.wav'
+    fake_hawaii.loc[fake_hawaii.file == 'Blackpool_Combined_FINAL', 'file_with_ext'] = 'blackpool_hi.wav'
+
+    calls['orig'] = True
+    calls = pd.concat([calls, calls_first_half, calls_sec_half, calls_shifted, fake_hawaii], axis=0).reset_index(drop=True)
 
     X = [process_file(*calls.loc[i, ['file_with_ext', 'start', 'end']]) \
          for i in tqdm(calls.index)]
 
-    calls['drop'] = [(len(x) != 140) for x in X]
+    median_size = np.median([len(x) for x in X])
+    print(pd.crosstab(np.array([len(x) for x in X]), 0))
+    print(median_size)
+    calls['drop'] = [(len(x) != median_size) for x in X]
     calls = calls.loc[~calls['drop']].reset_index(drop=True)
 
     X = np.vstack([
@@ -133,21 +188,24 @@ if __name__ == '__main__':
     np.save(Files.classifier_labels, le.classes_)
     torch.save((X, y_transformed), Files.classification_data)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y_transformed, test_size=0.2, random_state=42)
+    orig = np.asarray(calls.orig)
+    X_train, X_test, y_train, y_test, _, orig_test = \
+        train_test_split(X, y_transformed, orig, test_size=0.2, random_state=42)
 
     X_train = torch.tensor(X_train).float().to(device)
     y_train = torch.tensor(y_train).float().to(device)
     X_test = torch.tensor(X_test).float().to(device)
 
     classifier = Classifier(X.shape[1], len(le.classes_)).to(device)
+    # classifier = Classifier(len(le.classes_)).to(device)
 
     optimizer = torch.optim.Adam([
         dict(params=classifier.parameters(), lr=0.005),
     ])
 
-    # wandb.init(project="monke")
+    wandb.init(project="monke")
 
-    losses = []; iterator = trange(1500, leave=False)
+    losses = []; iterator = trange(20000, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
@@ -159,12 +217,12 @@ if __name__ == '__main__':
         tr_cm = confusion_matrix(y_train[idx].cpu(), y_prob.argmax(dim=1).detach().cpu(), normalize='all')*100
         tr_cm = tr_cm[range(len(tr_cm)), range(len(tr_cm))].sum().round(2)
 
-        te_cm = confusion_matrix(y_test, classifier(X_test).argmax(dim=1).detach().cpu(), normalize='all')*100
+        te_cm = confusion_matrix(y_test[orig_test], classifier(X_test).argmax(dim=1).detach().cpu()[orig_test], normalize='all')*100
         te_cm = te_cm[range(len(te_cm)), range(len(te_cm))].sum().round(2)
 
         losses.append(loss.item())
         iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm}%,Te:{te_cm}%')
-        # wandb.log(dict(class_l=loss.item(), class_tr=tr_cm, class_te=te_cm))
+        wandb.log(dict(class_l=loss.item(), class_tr=tr_cm, class_te=te_cm))
         loss.backward()
         optimizer.step()
 
