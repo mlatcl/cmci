@@ -114,6 +114,7 @@ if __name__ == '__main__':
 
     data_loader = AudioDataset(device=device)
     calls = data_loader.labels.copy()
+    calls['orig'] = False
 
     calls = calls.loc[calls.end > calls.start].reset_index(drop=True)
     calls.loc[calls.call_type == 'Resonating Note', 'call_type'] = 'Resonate'
@@ -123,7 +124,7 @@ if __name__ == '__main__':
     calls.loc[calls.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
 
     calls['file_with_ext'] = calls['file'] + '.wav'
-    calls['orig'] = False
+    calls['test'] = np.random.choice([False, True], len(calls), replace=True, p=[0.8, 0.2])
 
     calls_first_half = calls.copy()
     calls_first_half['end'] = (calls_first_half['end'] - calls_first_half['start'])/2 + calls_first_half['start']
@@ -138,29 +139,24 @@ if __name__ == '__main__':
     calls_shifted['end'] += np.random.uniform(-shift, shift, len(calls))
     calls_shifted = calls_shifted.loc[(calls_shifted.end > calls_shifted.start) & (calls_shifted.start > 0)]
 
-    if not os.path.exists('../data/Calls for ML/labelled_data/blackpool_hi.wav'):
+    if True:
         print('making fake hawaii data')
         from scipy.io import wavfile as wav
         import librosa
 
-        monkeys, sr = librosa.load('../data/Calls for ML/labelled_data/Blackpool_Combined_FINAL.wav', sr=44100)
-        soundscape, sr = librosa.load('../data/Calls for ML/unlabelled_data/hawaii.wav', sr=sr)
+        for file_name in calls.file_with_ext.unique():
+            monkeys, sr = librosa.load(os.path.join(Files.lb_data_loc, file_name), sr=44100)
+            soundscape, sr = librosa.load('../data/Calls for ML/unlabelled_data/hawaii.wav', sr=44100)
 
-        monkeys = monkeys*0.25 + 0.75*soundscape[:len(monkeys)]
-        wav.write('../data/Calls for ML/labelled_data/blackpool_hi.wav', 44100, monkeys)
+            monkeys = monkeys*0.25 + 0.75*soundscape[:len(monkeys)]
+            wav.write(os.path.join(Files.lb_data_loc, 'HI_' + file_name), 44100, monkeys)
 
-        monkeys, sr = librosa.load('../data/Calls for ML/labelled_data/Shaldon_Combined.wav', sr=44100)
-        soundscape, sr = librosa.load('../data/Calls for ML/unlabelled_data/hawaii.wav', sr=sr)
-
-        monkeys = monkeys*0.25 + 0.75*soundscape[:len(monkeys)]
-        wav.write('../data/Calls for ML/labelled_data/shaldon_hi.wav', 44100, monkeys)
+    calls_copy = calls.copy()
 
     fake_hawaii = calls.copy()
     fake_hawaii = fake_hawaii.loc[fake_hawaii.file.isin(['Blackpool_Combined_FINAL', 'Shaldon_Combined'])].reset_index(drop=True)
-    fake_hawaii.loc[fake_hawaii.file == 'Shaldon_Combined', 'file'] = 'shaldon_hi'
-    fake_hawaii.loc[fake_hawaii.file == 'Blackpool_Combined_FINAL', 'file'] = 'blackpool_hi'
-    fake_hawaii.loc[fake_hawaii.file == 'Shaldon_Combined', 'file_with_ext'] = 'shaldon_hi.wav'
-    fake_hawaii.loc[fake_hawaii.file == 'Blackpool_Combined_FINAL', 'file_with_ext'] = 'blackpool_hi.wav'
+    fake_hawaii.loc[:, 'file'] = 'HI_' + fake_hawaii.loc[:, 'file']
+    fake_hawaii.loc[:, 'file_with_ext'] = 'HI_' + fake_hawaii.loc[:, 'file_with_ext']
 
     calls['orig'] = True
     calls = pd.concat([calls, calls_first_half, calls_sec_half, calls_shifted, fake_hawaii], axis=0).reset_index(drop=True)
@@ -185,12 +181,14 @@ if __name__ == '__main__':
     le.fit(y)
     y_transformed = le.transform(y)
 
-    np.save(Files.classifier_labels, le.classes_)
-    torch.save((X, y_transformed), Files.classification_data)
+    X_train = X[~calls.test]
+    X_test = X[calls.test]
+    y_train = y_transformed[~calls.test]
+    y_test = y_transformed[calls.test]
+    orig = np.asarray(calls.loc[calls.test, 'orig'])
 
-    orig = np.asarray(calls.orig)
-    X_train, X_test, y_train, y_test, _, orig_test = \
-        train_test_split(X, y_transformed, orig, test_size=0.2, random_state=42)
+    np.save(Files.classifier_labels, le.classes_)
+    # torch.save((X, y_transformed), Files.classification_data)
 
     X_train = torch.tensor(X_train).float().to(device)
     y_train = torch.tensor(y_train).float().to(device)
@@ -217,12 +215,16 @@ if __name__ == '__main__':
         tr_cm = confusion_matrix(y_train[idx].cpu(), y_prob.argmax(dim=1).detach().cpu(), normalize='all')*100
         tr_cm = tr_cm[range(len(tr_cm)), range(len(tr_cm))].sum().round(2)
 
-        te_cm = confusion_matrix(y_test[orig_test], classifier(X_test).argmax(dim=1).detach().cpu()[orig_test], normalize='all')*100
+        y_test_hat = classifier(X_test).argmax(dim=1).detach().cpu()
+        te_cm = confusion_matrix(y_test[orig], y_test_hat[orig], normalize='all')*100
         te_cm = te_cm[range(len(te_cm)), range(len(te_cm))].sum().round(2)
 
+        te_cm_f = confusion_matrix(y_test, y_test_hat, normalize='all')*100
+        te_cm_f = te_cm_f[range(len(te_cm_f)), range(len(te_cm_f))].sum().round(2)
+
         losses.append(loss.item())
-        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm}%,Te:{te_cm}%')
-        wandb.log(dict(class_l=loss.item(), class_tr=tr_cm, class_te=te_cm))
+        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm}%,Te:{te_cm}%,TeF:{te_cm_f}')
+        wandb.log(dict(class_l=loss.item(), class_tr=tr_cm, class_te=te_cm, class_te_f=te_cm_f))
         loss.backward()
         optimizer.step()
 
