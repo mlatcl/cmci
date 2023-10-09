@@ -82,7 +82,10 @@ class Classifier(torch.nn.Module):
 #         return torch.nn.functional.softmax(x, dim=-1)
 
 class ClassifierPipeline:
-    def __init__(self):
+    def __init__(self, mode=''):
+
+        Files.classifier_state = Files.classifier_state.replace('class', 'class_' + mode)
+
         state_dict = torch.load(Files.classifier_state)
         num_classes, input_size = state_dict['nnet.0.weight'].shape
         num_classes = int(num_classes/3)
@@ -112,6 +115,7 @@ class ClassifierPipeline:
 
 if __name__ == '__main__':
 
+    MODE = ''  # can also be 'smol'
     data_loader = AudioDataset(device=device)
     calls = data_loader.labels.copy()
     calls['orig'] = False
@@ -122,6 +126,7 @@ if __name__ == '__main__':
     # Reclassify call clusters
     calls.loc[calls.call_type.isin(['Phee', 'Trill', 'Whistle']), 'call_type'] = 'LongCalls'
     calls.loc[calls.call_type.isin(['Cheep', 'Chuck', 'Tsit']), 'call_type'] = 'ShortCalls'
+    calls.loc[calls.call_type.isin(['Jagged', 'Jagged Trills', 'Jagged Trill']), 'call_type'] = 'Jagged'
 
     calls['file_with_ext'] = calls['file'] + '.wav'
     calls['test'] = np.random.choice([False, True], len(calls), replace=True, p=[0.8, 0.2])
@@ -151,7 +156,7 @@ if __name__ == '__main__':
             monkeys = monkeys*0.25 + 0.75*soundscape[:len(monkeys)]
             wav.write(os.path.join(Files.lb_data_loc, 'HI_' + file_name), 44100, monkeys)
 
-    calls_copy = calls.copy()
+    # calls_copy = calls.copy()
 
     fake_hawaii = calls.copy()
     fake_hawaii = fake_hawaii.loc[fake_hawaii.file.isin(['Blackpool_Combined_FINAL', 'Shaldon_Combined'])].reset_index(drop=True)
@@ -181,21 +186,30 @@ if __name__ == '__main__':
     le.fit(y)
     y_transformed = le.transform(y)
 
-    X_train = X[~calls.test]
+    if MODE == '':
+        X_train = X[~calls.test]
+        y_train = y_transformed[~calls.test]
+
+        p = pd.merge(calls.loc[~calls.test, 'call_type'], pd.crosstab(calls.loc[~calls.test, 'call_type'], 0)[0], on='call_type', how='left')[0]
+        p = np.asarray(1/p) / sum(1/p)
+
+    elif MODE == 'smol':
+        X_train = X[(~calls.test) & calls.orig]
+        y_train = y_transformed[(~calls.test) & calls.orig]
+        Files.classifier_state = Files.classifier_state.replace('class', 'class_smol')
+
     X_test = X[calls.test]
-    y_train = y_transformed[~calls.test]
     y_test = y_transformed[calls.test]
     orig = np.asarray(calls.loc[calls.test, 'orig'])
 
     np.save(Files.classifier_labels, le.classes_)
-    # torch.save((X, y_transformed), Files.classification_data)
+    torch.save((X_train, y_train, X_test, y_test), Files.classification_data)
 
     X_train = torch.tensor(X_train).float().to(device)
     y_train = torch.tensor(y_train).float().to(device)
     X_test = torch.tensor(X_test).float().to(device)
 
     classifier = Classifier(X.shape[1], len(le.classes_)).to(device)
-    # classifier = Classifier(len(le.classes_)).to(device)
 
     optimizer = torch.optim.Adam([
         dict(params=classifier.parameters(), lr=0.005),
@@ -222,9 +236,12 @@ if __name__ == '__main__':
         te_cm_f = confusion_matrix(y_test, y_test_hat, normalize='all')*100
         te_cm_f = te_cm_f[range(len(te_cm_f)), range(len(te_cm_f))].sum().round(2)
 
+        te_cm_f_rn = confusion_matrix(y_test, y_test_hat, normalize='true')*100
+        te_cm_f_rn = te_cm_f_rn[range(len(te_cm_f_rn)), range(len(te_cm_f_rn))].sum().round(2)
+
         losses.append(loss.item())
-        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm}%,Te:{te_cm}%,TeF:{te_cm_f}')
-        wandb.log(dict(class_l=loss.item(), class_tr=tr_cm, class_te=te_cm, class_te_f=te_cm_f))
+        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm}%,Te:{te_cm}%,TeF:{te_cm_f}, TeFrN:{te_cm_f_rn}')
+        wandb.log(dict(class_l=loss.item(), class_tr=tr_cm, class_te=te_cm, class_te_f=te_cm_f, class_te_f_rn=te_cm_f_rn))
         loss.backward()
         optimizer.step()
 
