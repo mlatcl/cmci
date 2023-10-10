@@ -192,7 +192,7 @@ class Classifier(torch.nn.Module):
         return out
 
 class CallFinder(CallFinderBasic):
-    def __init__(self, classifier=None, device=device):
+    def __init__(self, classifier=None, le=None, device=device):
         super().__init__()
 
         if classifier is None:
@@ -203,8 +203,12 @@ class CallFinder(CallFinderBasic):
         else:
             self.classifier = classifier
 
-        self.le = LabelEncoder()
-        self.le.classes_ = np.load(Files.labels)
+        if le is None:
+            self.le = LabelEncoder()
+            self.le.classes_ = np.load(Files.labels)
+        else:
+            self.le = le
+
         self.featurizer = FEATURIZER
 
     def find_calls_rnn(self, audio, threshold=0.5, mininum_call_duration=0.05, start_time=0.0):
@@ -224,7 +228,7 @@ class CallFinder(CallFinderBasic):
         classes = []
         for start, stop in segments:
             classes.append(
-                self.le.inverse_transform([mode(probs[(t >= start) & (t < stop)].argmax(-1)).mode]).item()
+                self.le.inverse_transform([mode(probs.cpu()[(t >= start) & (t < stop)].argmax(-1)).mode]).item()
             )
         classes = np.asarray(classes)
 
@@ -253,7 +257,7 @@ if __name__ == '__main__':
         z_test[z_test == k] = repl
         z_full[z_full == k] = repl
 
-    torch.save((X_full, y_full, z_full), Files.train_data)
+    torch.save((X_train.cpu(), y_train.cpu(), X_test.cpu(), y_test), Files.train_data)
 
     X_test_2 = data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...]
     y_test_2 = data_loader.label_ts['ML_Test_3'].cpu().numpy()
@@ -264,7 +268,7 @@ if __name__ == '__main__':
         dict(params=classifier.parameters(), lr=0.001),
     ])
 
-    # wandb.init(project="monke")
+    wandb.init(project="monke")
 
     losses = []; iterator = trange(10000, leave=False)
     for i in iterator:
@@ -292,7 +296,7 @@ if __name__ == '__main__':
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                num_calls = len(CallFinder(classifier).find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])) - \
+                num_calls = len(CallFinder(classifier, data_loader.le).find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])[0]) - \
                     len(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL'])
 
         losses.append(loss.item())
@@ -305,7 +309,7 @@ if __name__ == '__main__':
     if os.path.exists(Files.state_dict):
         classifier.load_state_dict(torch.load(Files.state_dict))
     classifier.to(device)
-    np.save(Files.classifier_labels, data_loader.le.classes_)
+    np.save(Files.labels, data_loader.le.classes_)
 
     # pred = classifier(X_test).detach().cpu().round().reshape(-1)
     # for zoo in np.unique(z_test):
@@ -313,15 +317,17 @@ if __name__ == '__main__':
     #                            normalize='all').round(3)*100
     #     print(f'{zoo}:{_cm[0, 0] + _cm[1, 1]}')
 
-    # plt.rcParams["figure.figsize"] = (7, 2)
-    # fig = plt.figure()
-    # ax = fig.add_subplot()
-    # ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), 1 - classifier(data_loader.features['Blackpool_Combined_FINAL'][None, :1000, :])[0, :, 0].cpu().detach(), label='model predictions')
-    # ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), data_loader.label_ts['Blackpool_Combined_FINAL'][:1000].cpu() > 0, label='test data')
-    # ax.set_xlabel('time (s)')
-    # ax.set_ylabel('(probability of) call')
-    # ax.legend(loc='center right')
-    # plt.tight_layout()
+    plt.rcParams["figure.figsize"] = (7, 2)
+    fig = plt.figure()
+    ax = fig.add_subplot()
+    ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), 1 - classifier(data_loader.features['Blackpool_Combined_FINAL'][None, :1000, :])[0, :, 0].cpu().detach(), label='model predictions')
+    ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), data_loader.label_ts['Blackpool_Combined_FINAL'][:1000].cpu() > 0, label='test data')
+    # ax.plot(pred_2, label='model predictions')
+    # ax.plot(y_test_2, label='test data')
+    ax.set_xlabel('time (s)')
+    ax.set_ylabel('(probability of) call')
+    ax.legend(loc='center right')
+    plt.tight_layout()
 
     # wandb.log(dict(plot=wandb.Image(fig)))
 

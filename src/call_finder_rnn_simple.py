@@ -218,7 +218,7 @@ if __name__ == '__main__':
         z_test[z_test == k] = repl
         z_full[z_full == k] = repl
 
-    torch.save((X_full, y_full, z_full), Files.train_data)
+    # torch.save((X_full, y_full, z_full), Files.train_data)
 
     X_test_2 = data_loader.featurizer(data_loader.audio['ML_Test_3']).T[None, ...]
     y_test_2 = data_loader.label_ts['ML_Test_3'].cpu().numpy()
@@ -231,35 +231,35 @@ if __name__ == '__main__':
 
     # wandb.init(project="monke")
 
-    # losses = []; iterator = trange(2000, leave=False)
-    # for i in iterator:
-    #     optimizer.zero_grad()
+    losses = []; iterator = trange(2000, leave=False)
+    for i in iterator:
+        optimizer.zero_grad()
 
-    #     idx = np.random.choice(len(y_train), 500)
+        idx = np.random.choice(len(y_train), 500)
 
-    #     y_prob = classifier(X_train[idx])
-    #     loss = -torch.distributions.Bernoulli(y_prob).log_prob(y_train[idx]).sum()
+        y_prob = classifier(X_train[idx])
+        loss = -torch.distributions.Bernoulli(y_prob).log_prob(y_train[idx]).sum()
 
-    #     if i % 100 == 0:
-    #         tr_cm = confusion_matrix(y_train[idx].reshape(-1).cpu(), y_prob.round().reshape(-1).detach().cpu(), normalize='all').round(3)*100
-    #         tr_cm = (tr_cm[0, 0] + tr_cm[1, 1]).round(2)
+        if i % 100 == 0:
+            tr_cm = confusion_matrix(y_train[idx].reshape(-1).cpu(), y_prob.round().reshape(-1).detach().cpu(), normalize='all').round(3)*100
+            tr_cm = (tr_cm[0, 0] + tr_cm[1, 1]).round(2)
 
-    #         pred = classifier(X_test).detach().cpu().round().reshape(-1)
-    #         pred[0] = 0; pred[-1] = 1
-    #         cm = confusion_matrix(y_test, pred, normalize='all').round(3)*100
-    #         cm = (cm[0, 0] + cm[1, 1]).round(2)
+            pred = classifier(X_test).detach().cpu().round().reshape(-1)
+            pred[0] = 0; pred[-1] = 1
+            cm = confusion_matrix(y_test, pred, normalize='all').round(3)*100
+            cm = (cm[0, 0] + cm[1, 1]).round(2)
 
-    #         pred_2 = classifier(X_test_2)[0].detach().cpu().numpy()
-    #         cm_2 = confusion_matrix(y_test_2, pred_2.round(), normalize='all').round(3)*100
-    #         cm_2 = (cm_2[0, 0] + cm_2[1, 1]).round(2)
+            pred_2 = classifier(X_test_2)[0].detach().cpu().numpy()
+            cm_2 = confusion_matrix(y_test_2, pred_2.round(), normalize='all').round(3)*100
+            cm_2 = (cm_2[0, 0] + cm_2[1, 1]).round(2)
 
-    #     losses.append(loss.item())
-    #     iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm},Te2:{cm_2}')
-    #     # wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_mlt3=cm_2))
-    #     loss.backward()
-    #     optimizer.step()
+        losses.append(loss.item())
+        iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm},Te2:{cm_2}')
+        # wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_mlt3=cm_2))
+        loss.backward()
+        optimizer.step()
 
-    # torch.save(classifier.cpu().state_dict(), Files.state_dict)
+    torch.save(classifier.cpu().state_dict(), Files.state_dict)
     if os.path.exists(Files.state_dict):
         classifier.load_state_dict(torch.load(Files.state_dict))
     classifier.to(device)
@@ -278,17 +278,18 @@ if __name__ == '__main__':
     plt.tight_layout()
     plt.legend(loc='center right')
 
-    basic_ml_test_cm = get_confusion_matrix(
-        np.array(data_loader.labels.loc[data_loader.labels.file == Files.ml_test.strip('.wav'), ['start', 'end']]),
-        simple_classifier(Files.lb_data_loc + Files.ml_test)
-    )
+    # basic_ml_test_cm = get_confusion_matrix(
+    #     np.array(data_loader.labels.loc[data_loader.labels.file == Files.ml_test.strip('.wav'), ['start', 'end']]),
+    #     simple_classifier(Files.lb_data_loc + Files.ml_test)
+    # )
 
-    basic_blackpool_cm = get_confusion_matrix(
-        np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
-        simple_classifier(Files.lb_data_loc + 'Blackpool_Combined_FINAL.wav', smoothing=1300)
-    )
+    # basic_blackpool_cm = get_confusion_matrix(
+    #     np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
+    #     simple_classifier(Files.lb_data_loc + 'Blackpool_Combined_FINAL.wav', smoothing=1300)
+    # )
 
     rnn_blackpool_cm = get_confusion_matrix(
         np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
         CallFinder().find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])
     )
+    rnn_blackpool_cm
