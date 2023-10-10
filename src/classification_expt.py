@@ -84,11 +84,11 @@ class Classifier(torch.nn.Module):
 class ClassifierPipeline:
     def __init__(self, mode=''):
 
-        Files.classifier_state = Files.classifier_state.replace('class', 'class_' + mode)
+        Files.classifier_state = Files.classifier_state.replace('class', 'class' + mode)
 
         state_dict = torch.load(Files.classifier_state)
-        num_classes, input_size = state_dict['nnet.0.weight'].shape
-        num_classes = int(num_classes/3)
+        _, input_size = state_dict['nnet.0.weight'].shape
+        num_classes = len(state_dict['nnet.4.bias'])
 
         self.classifier = Classifier(input_size, num_classes)
         self.classifier.load_state_dict(state_dict)
