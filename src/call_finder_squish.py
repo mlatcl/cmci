@@ -39,7 +39,7 @@ class Files:
     # create symlinks so that all the data can be seen from labelled_data
     lb_data_loc = '../data/Calls for ML/labelled_data/'
 
-    state_dict = '../data/Calls for ML/xx.pth'
+    state_dict = '../data/Calls for ML/squish_rnn_sd.pth'
     train_data = '../data/Calls for ML/squish_training_data.pth'
     labels = '../data/Calls for ML/squish_labels.npy'
 
