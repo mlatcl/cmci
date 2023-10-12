@@ -10,12 +10,11 @@ from dash import Dash, dcc, html
 from dash.dependencies import Input, Output
 import dash_bootstrap_components as dbc
 
-sys.path.append('src')
-
 import torch
 from callfinder import CallFinder as CFv0
-from call_finder_rnn_simple import load_audio as load_torch_audio, CallFinder as CF_RNN_SUP, device, Files as Files_v1, SR as SR_RNN
-from call_finder_pseudolabelling import CallFinder as CF_SMOL_SL
+from call_finder_squish import load_audio as load_torch_audio, CallFinder as CF_SQUISH, device, SR as SR_RNN
+from call_finder_squish_smol import CallFinder as CF_SQUISH_SMOL
+from call_finder_rnn_simple import CallFinder as CF_RNN
 
 from audio.audio_processing import get_spectrum, load_audio_file
 from classification_expt import ClassifierPipeline
@@ -23,8 +22,9 @@ from classification_expt import ClassifierPipeline
 app = Dash(__name__, external_stylesheets=[dbc.themes.YETI])
 
 cf_v0 = CFv0()
-cv_rnn_sup = CF_RNN_SUP()
-cv_smol_sl = CF_SMOL_SL()
+cv_rnn = CF_RNN()
+cv_sqish = CF_SQUISH()
+cv_sqish_smol = CF_SQUISH_SMOL()
 classifier_pipeline = ClassifierPipeline()
 
 def define_slidemarks(sampling_rate, audio_len):
@@ -46,11 +46,12 @@ app.layout = dbc.Container(
                         dcc.Dropdown(
                             id="model-dropdown",
                             options=[
-                                {"label": "OG Heuristic", "value": "orig"},
-                                {"label": "RNN Supervised", "value": "rnn_supervised"},
-                                {"label": "RNN Semisupervised (Smol)", "value": "rnn_pseudolabelling_small"},
+                                {"label": "OG", "value": "v0"},
+                                {"label": "RNN", "value": "rnn"},
+                                {"label": "Squish", "value": "sqish"},
+                                {"label": "SmolSquish", "value": "sqish_smol"},
                             ],
-                            value="orig",
+                            value="v0",
                         ),
                         html.H2("Audio File"),
                         dcc.Dropdown(get_audio_files(), id="audio-dd"),
@@ -70,6 +71,13 @@ app.layout = dbc.Container(
     ],
     fluid=True
 )
+
+@app.callback(
+    Output("slider", "value"),
+    Input("audio-dd", "value")
+)
+def update_initial_exposed(_):
+    return 0.0
 
 @app.callback(
     [
@@ -101,23 +109,37 @@ def update_initial_exposed(start_time, audio_file_name, model_name):
 
     spectrum_fig = px.imshow(S, aspect='auto', x=t, y=f, origin='lower', labels=dict(x='Time (sec)', y='Freq (Hz)'), color_continuous_scale='greys')
 
-    if model_name == 'orig':
-        segments = cf_v0.find_calls(S, f, t)
-    elif model_name == 'rnn_supervised':
-        torch_audio = load_torch_audio(audio_file_name).to(device)
-        torch_t = torch.arange(len(torch_audio)).to(device)/SR_RNN
-        torch_audio = torch_audio[(torch_t >= start_time) & (torch_t < start_time + segment_length)]
-        segments = cv_rnn_sup.find_calls_rnn(torch_audio, start_time=start_time)
-    elif model_name == 'rnn_pseudolabelling_small':
-        torch_audio = load_torch_audio(audio_file_name).to(device)
-        torch_t = torch.arange(len(torch_audio)).to(device)/SR_RNN
-        torch_audio = torch_audio[(torch_t >= start_time) & (torch_t < start_time + segment_length)]
-        segments = cv_smol_sl.find_calls_rnn(torch_audio, start_time=start_time)
-    else:
-        raise ValueError('unknown model')
+    try:
+        if model_name == 'v0':
+            segments = cf_v0.find_calls(S, f, t)
+        elif model_name == 'rnn':
+            torch_audio = load_torch_audio(audio_file_name).to(device)
+            torch_audio /= torch_audio.std()
+            torch_t = torch.arange(len(torch_audio)).to(device)/SR_RNN
+            torch_audio = torch_audio[(torch_t >= start_time) & (torch_t < start_time + segment_length)]
+            segments = cv_rnn.find_calls_rnn(torch_audio, start_time=start_time)
+        elif model_name == 'sqish':
+            torch_audio = load_torch_audio(audio_file_name).to(device)
+            torch_audio /= torch_audio.std()
+            torch_t = torch.arange(len(torch_audio)).to(device)/SR_RNN
+            torch_audio = torch_audio[(torch_t >= start_time) & (torch_t < start_time + segment_length)]
+            segments, classes = cv_sqish.find_calls_rnn(torch_audio, start_time=start_time)
+        elif model_name == 'sqish_smol':
+            torch_audio = load_torch_audio(audio_file_name).to(device)
+            torch_audio /= torch_audio.std()
+            torch_t = torch.arange(len(torch_audio)).to(device)/SR_RNN
+            torch_audio = torch_audio[(torch_t >= start_time) & (torch_t < start_time + segment_length)]
+            segments, classes = cv_sqish_smol.find_calls_rnn(torch_audio, start_time=start_time)
+        else:
+            raise ValueError('unknown model')
+    except:
+        from IPython.core.debugger import set_trace; set_trace()
+        None
 
-    if len(segments) > 0:
+    if len(segments) > 0 and 'classes' not in locals():
         classes = classifier_pipeline.predict(audio_file_name, segments[:, 0], segments[:, 1], data_loc='')
+    elif 'classes' in locals():
+        pass
     else:
         classes = np.array([])
 

@@ -321,7 +321,7 @@ if __name__ == '__main__':
     fig = plt.figure()
     ax = fig.add_subplot()
     # ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), 1 - classifier(data_loader.features['Blackpool_Combined_FINAL'][None, :1000, :])[0, :, 0].cpu().detach(), label='model predictions')
-    # ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), data_loader.label_ts['Blackpool_Combined_FINAL'][:1000].cpu() > 0, label='test data')
+    ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), data_loader.label_ts['Blackpool_Combined_FINAL'][:1000].cpu() > 0, label='test data')
     ax.plot(pred_2, label='model predictions')
     ax.plot(y_test_2, label='test data')
     ax.set_xlabel('time (s)')
