@@ -249,7 +249,7 @@ if __name__ == '__main__':
     z_test = z_full[test_idx, ...].copy().reshape(-1)
 
     conv = {'Blackpool_Combined_FINAL': 'blackpool', 'Shaldon_Combined': 'shaldon',
-            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham'}
+            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham', 'ML_Test_4': 'banham'}
 
     for k, repl in conv.items():
         z_test[z_test == k] = repl
@@ -275,7 +275,8 @@ if __name__ == '__main__':
         idx = np.random.choice(len(y_train), 500)
 
         y_prob = classifier(X_train[idx])
-        loss = -torch.distributions.Categorical(y_prob).log_prob(y_train[idx]).sum()
+        loss = -torch.distributions.Categorical(y_prob).log_prob(y_train[idx]).mean()
+        loss += -1e2*torch.distributions.Bernoulli(1 - y_prob[:, :, 0]).log_prob((y_train[idx] > 0).float()).mean()
 
         if i % 100 == 0:
             tr_cm = confusion_matrix(y_train[idx].reshape(-1).cpu(), y_prob.argmax(dim=-1).reshape(-1).detach().cpu(), normalize='all').round(3)*100
@@ -299,7 +300,7 @@ if __name__ == '__main__':
 
         losses.append(loss.item())
         iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm},Te2:{cm_2}')
-        # wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_rn=cm_rn, te_mlt3=cm_2, num_off=np.log1p(abs(num_calls))))
+        wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_rn=cm_rn, te_mlt3=cm_2, num_off=np.log1p(abs(num_calls))))
         loss.backward()
         optimizer.step()
 
@@ -309,11 +310,11 @@ if __name__ == '__main__':
     classifier.to(device)
     np.save(Files.labels, data_loader.le.classes_)
 
-    # pred = classifier(X_test).detach().cpu().round().reshape(-1)
-    # for zoo in np.unique(z_test):
-    #     _cm = confusion_matrix(y_test[z_test == zoo], pred.round()[z_test == zoo],
-    #                            normalize='all').round(3)*100
-    #     print(f'{zoo}:{_cm[0, 0] + _cm[1, 1]}')
+    pred = classifier(X_test).argmax(axis=-1).detach().cpu().reshape(-1)
+    for zoo in np.unique(z_test):
+        _cm = confusion_matrix(y_test[z_test == zoo], pred.round()[z_test == zoo],
+                               normalize=None).round(3)*100
+        print(f'{zoo}:\n{_cm}')
 
     plt.rcParams["figure.figsize"] = (7, 2)
     fig = plt.figure()
@@ -343,3 +344,17 @@ if __name__ == '__main__':
     #     np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
     #     CallFinder().find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])
     # )
+
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+    display_labels = data_loader.le.classes_.copy()
+    display_labels[0] = 'Not Call'
+    ConfusionMatrixDisplay(
+        confusion_matrix(
+            data_loader.le.inverse_transform(y_test.astype(int)),
+            data_loader.le.inverse_transform(pred),
+            normalize='true'
+        ).round(2),
+        display_labels=display_labels
+    ).plot()
+    plt.title('Squish Smol')
