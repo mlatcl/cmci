@@ -129,7 +129,7 @@ if __name__ == '__main__':
     calls.loc[calls.call_type.isin(['Jagged', 'Jagged Trills', 'Jagged Trill']), 'call_type'] = 'Jagged'
 
     calls['file_with_ext'] = calls['file'] + '.wav'
-    calls['test'] = np.random.choice([False, True], len(calls), replace=True, p=[0.8, 0.2])
+    calls['test'] = np.random.choice([False, True], len(calls), replace=True, p=[0.9, 0.1])
 
     calls_first_half = calls.copy()
     calls_first_half['end'] = (calls_first_half['end'] - calls_first_half['start'])/2 + calls_first_half['start']
@@ -151,7 +151,7 @@ if __name__ == '__main__':
 
         for file_name in calls.file_with_ext.unique():
             monkeys, sr = librosa.load(os.path.join(Files.lb_data_loc, file_name), sr=44100)
-            soundscape, sr = librosa.load('../data/Calls for ML/unlabelled_data/hawaii.wav', sr=44100)
+            soundscape, sr = librosa.load('../data/hawaii.wav', sr=44100)
 
             monkeys = monkeys*0.25 + 0.75*soundscape[:len(monkeys)]
             wav.write(os.path.join(Files.lb_data_loc, 'HI_' + file_name), 44100, monkeys)

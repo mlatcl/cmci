@@ -270,7 +270,7 @@ if __name__ == '__main__':
 
     wandb.init(project="monke")
 
-    losses = []; iterator = trange(10000, leave=False)
+    losses = []; iterator = trange(3500, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
@@ -301,7 +301,7 @@ if __name__ == '__main__':
 
         losses.append(loss.item())
         iterator.set_description(f'L:{np.round(loss.item(), 2)},Tr:{tr_cm},Te:{cm},Te2:{cm_2}')
-        # wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_rn=cm_rn, te_mlt3=cm_2, num_off=np.log1p(abs(num_calls))))
+        wandb.log(dict(l=loss.item(), tr=tr_cm, te=cm, te_rn=cm_rn, te_mlt3=cm_2, num_off=np.log1p(abs(num_calls))))
         loss.backward()
         optimizer.step()
 
@@ -320,10 +320,10 @@ if __name__ == '__main__':
     plt.rcParams["figure.figsize"] = (7, 2)
     fig = plt.figure()
     ax = fig.add_subplot()
-    ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), 1 - classifier(data_loader.features['Blackpool_Combined_FINAL'][None, :1000, :])[0, :, 0].cpu().detach(), label='model predictions')
-    ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), data_loader.label_ts['Blackpool_Combined_FINAL'][:1000].cpu() > 0, label='test data')
-    # ax.plot(pred_2, label='model predictions')
-    # ax.plot(y_test_2, label='test data')
+    # ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), 1 - classifier(data_loader.features['Blackpool_Combined_FINAL'][None, :1000, :])[0, :, 0].cpu().detach(), label='model predictions')
+    # ax.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), data_loader.label_ts['Blackpool_Combined_FINAL'][:1000].cpu() > 0, label='test data')
+    ax.plot(pred_2, label='model predictions')
+    ax.plot(y_test_2, label='test data')
     ax.set_xlabel('time (s)')
     ax.set_ylabel('(probability of) call')
     ax.legend(loc='center right')
