@@ -212,7 +212,7 @@ if __name__ == '__main__':
     z_test = z_full[test_idx, ...].copy().reshape(-1)
 
     conv = {'Blackpool_Combined_FINAL': 'blackpool', 'Shaldon_Combined': 'shaldon',
-            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham'}
+            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham', 'ML_Test_4': 'banham'}
 
     for k, repl in conv.items():
         z_test[z_test == k] = repl
@@ -267,8 +267,8 @@ if __name__ == '__main__':
     pred = classifier(X_test).detach().cpu().round().reshape(-1)
     for zoo in np.unique(z_test):
         _cm = confusion_matrix(y_test[z_test == zoo], pred.round()[z_test == zoo],
-                               normalize='all').round(3)*100
-        print(f'{zoo}:{_cm[0, 0] + _cm[1, 1]}')
+                               normalize=None).round(3)*100
+        print(f'{zoo}:\n{_cm}')
 
     plt.rcParams["figure.figsize"] = (7, 2)
     plt.plot(data_loader.ts['Blackpool_Combined_FINAL'][:1000].cpu(), classifier(data_loader.features['Blackpool_Combined_FINAL'][None, :1000, :])[0].cpu().detach(), label='model predictions')
@@ -288,8 +288,8 @@ if __name__ == '__main__':
     #     simple_classifier(Files.lb_data_loc + 'Blackpool_Combined_FINAL.wav', smoothing=1300)
     # )
 
-    rnn_blackpool_cm = get_confusion_matrix(
-        np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
-        CallFinder().find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])
-    )
-    rnn_blackpool_cm
+    # rnn_blackpool_cm = get_confusion_matrix(
+    #     np.array(data_loader.labels.loc[data_loader.labels.file == 'Blackpool_Combined_FINAL', ['start', 'end']]),
+    #     CallFinder().find_calls_rnn(data_loader.audio['Blackpool_Combined_FINAL'])
+    # )
+    # rnn_blackpool_cm
