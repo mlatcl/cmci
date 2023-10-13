@@ -249,7 +249,7 @@ if __name__ == '__main__':
     z_test = z_full[test_idx, ...].copy().reshape(-1)
 
     conv = {'Blackpool_Combined_FINAL': 'blackpool', 'Shaldon_Combined': 'shaldon',
-            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham', 'ML_Test_4': 'banham'}
+            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham'}
 
     for k, repl in conv.items():
         z_test[z_test == k] = repl
@@ -268,15 +268,14 @@ if __name__ == '__main__':
 
     wandb.init(project="monke")
 
-    losses = []; iterator = trange(19000, leave=False)
+    losses = []; iterator = trange(20000, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
         idx = np.random.choice(len(y_train), 500)
 
         y_prob = classifier(X_train[idx])
-        loss = -torch.distributions.Categorical(y_prob).log_prob(y_train[idx]).mean()
-        loss += -1e2*torch.distributions.Bernoulli(1 - y_prob[:, :, 0]).log_prob((y_train[idx] > 0).float()).mean()
+        loss = -torch.distributions.Categorical(y_prob).log_prob(y_train[idx]).sum()
 
         if i % 100 == 0:
             tr_cm = confusion_matrix(y_train[idx].reshape(-1).cpu(), y_prob.argmax(dim=-1).reshape(-1).detach().cpu(), normalize='all').round(3)*100
@@ -357,4 +356,18 @@ if __name__ == '__main__':
         ).round(2),
         display_labels=display_labels
     ).plot()
-    plt.title('Squish Smol')
+    plt.title('Overall')
+
+    zoo = 'blackpool'
+    display_labels = data_loader.le.inverse_transform(np.unique(np.hstack([y_test.astype(int)[z_test == zoo], pred[z_test == zoo]]))).copy()
+    display_labels[display_labels == ''] = 'No Call'
+    ConfusionMatrixDisplay(
+        confusion_matrix(
+            data_loader.le.inverse_transform(y_test.astype(int)[z_test == zoo]),
+            data_loader.le.inverse_transform(pred[z_test == zoo]),
+            normalize='true'
+        ).round(2),
+        display_labels=display_labels
+    ).plot()
+    plt.title(f'{zoo}')
+    plt.tight_layout()
