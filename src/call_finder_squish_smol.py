@@ -248,8 +248,12 @@ if __name__ == '__main__':
     y_test = y_full[test_idx, ...].cpu().numpy().reshape(-1)
     z_test = z_full[test_idx, ...].copy().reshape(-1)
 
+    # p = pd.DataFrame(dict(cats=mode(y_train.cpu(), axis=1).mode))
+    # p = pd.merge(p, pd.crosstab(p.cats, 0)[0], on='cats', how='left')[0]
+    # p = np.asarray(1/p) / sum(1/p)
+
     conv = {'Blackpool_Combined_FINAL': 'blackpool', 'Shaldon_Combined': 'shaldon',
-            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham'}
+            'ML_Test': 'banham', 'ML_Test_2a': 'banham', 'ML_Test_2b': 'banham', 'ML_Test_4': 'banham'}
 
     for k, repl in conv.items():
         z_test[z_test == k] = repl
@@ -346,6 +350,8 @@ if __name__ == '__main__':
 
     from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
+    plt.rcParams["figure.figsize"] = (7, 7)
+
     display_labels = data_loader.le.classes_.copy()
     display_labels[0] = 'Not Call'
     ConfusionMatrixDisplay(
@@ -357,8 +363,9 @@ if __name__ == '__main__':
         display_labels=display_labels
     ).plot()
     plt.title('Overall')
+    plt.tight_layout()
 
-    zoo = 'blackpool'
+    zoo = 'banham'
     display_labels = data_loader.le.inverse_transform(np.unique(np.hstack([y_test.astype(int)[z_test == zoo], pred[z_test == zoo]]))).copy()
     display_labels[display_labels == ''] = 'No Call'
     ConfusionMatrixDisplay(

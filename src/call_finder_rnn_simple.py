@@ -231,7 +231,7 @@ if __name__ == '__main__':
 
     wandb.init(project="monke")
 
-    losses = []; iterator = trange(2000, leave=False)
+    losses = []; iterator = trange(1500, leave=False)
     for i in iterator:
         optimizer.zero_grad()
 
