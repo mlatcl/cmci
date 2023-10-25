@@ -77,7 +77,7 @@ def get_spectrum(start_time, sampling_rate, audio, segment_length=10):
     max_time = (len(audio)/sampling_rate)
     start_idx = max(0, min(int(sampling_rate * start_time), int((max_time - segment_length - 1)*sampling_rate)))
     end_idx = int(sampling_rate * (start_time + segment_length))
-    f, t, spectrum = stft(audio[start_idx:end_idx], nperseg=sampling_rate//10, fs=sampling_rate)
+    f, t, spectrum = stft(audio[start_idx:end_idx], nperseg=int(sampling_rate*0.005), fs=sampling_rate)
     S = np.log(np.abs(spectrum) + 1e-10)
     return S, f, start_time + t
 
