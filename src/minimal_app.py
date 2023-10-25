@@ -12,24 +12,14 @@ from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 
 import torch
-from callfinder import CallFinder as CFv0
-from call_finder_squish import load_audio as load_torch_audio, CallFinder as CF_SQUISH, device, SR as SR_RNN
-from call_finder_squish_smol import CallFinder as CF_SQUISH_SMOL
-from call_finder_squish_full import CallFinder as CF_SQUISH_FULL
-from call_finder_rnn_simple import CallFinder as CF_RNN
-from call_finder_rnn_long import CallFinder as CF_RNN_LONG
+from call_finder_rnn_simple import CallFinder as CF_RNN, device, SR as SR_RNN, load_audio as load_torch_audio
 
 from audio.audio_processing import get_spectrum, load_audio_file
 from classification_expt import ClassifierPipeline
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.YETI])
 
-cf_v0 = CFv0()
 cv_rnn = CF_RNN()
-cv_rnn_long = CF_RNN_LONG()
-cv_sqish_smol = CF_SQUISH_SMOL()
-cv_sqish_smol_long = CF_SQUISH_FULL()
-classifier_pipeline = ClassifierPipeline()
 
 def define_slidemarks(sampling_rate, audio_len):
     max_time = int(audio_len/sampling_rate)
